@@ -226,19 +226,24 @@ function connectSocket(token) {
     auth: { token }
   });
 
+  let isFirstConnect = true;
+
   socket.on('connect', () => {
     console.log("Socket connected successfully!");
     agentStatusCheckbox.checked = true;
     agentStatusLabel.textContent = "Online";
     agentStatusLabel.style.color = "var(--success)";
     
-    // Switch project room
-    socket.emit('agent:select_project', { projectId: activeProjectId });
+    if (!isFirstConnect) {
+      // On reconnect: re-emit project room (loadProjects already ran)
+      socket.emit('agent:select_project', { projectId: activeProjectId });
 
-    // Restore active chat session room membership on reconnect
-    if (currentSessionId) {
-      socket.emit('agent:join_chat', { sessionId: currentSessionId });
+      // Restore active chat session room membership on reconnect
+      if (currentSessionId) {
+        socket.emit('agent:join_chat', { sessionId: currentSessionId });
+      }
     }
+    isFirstConnect = false;
   });
 
   socket.on('disconnect', () => {
@@ -429,7 +434,6 @@ function selectSession(sessionId) {
   document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('selected'));
   renderSessions();
 
-  const session = sessions.find(s => s._id === sessionId);
   if (!session) return;
 
   // Show active layout elements
@@ -928,6 +932,12 @@ async function loadProjects() {
         }
         
         renderProjectsDropdown(projects);
+
+        // Re-sync socket to the correct project room after projects load
+        // (the socket may have connected before loadProjects validated the activeProjectId)
+        if (socket && socket.connected) {
+          socket.emit('agent:select_project', { projectId: activeProjectId });
+        }
       }
     }
   } catch (err) {

@@ -51,6 +51,11 @@ app.use(express.json());
 // Serve static UI assets
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Root redirect → dashboard
+app.get('/', (req, res) => {
+  res.redirect('/dashboard/index.html');
+});
+
 // Authentication Middleware
 const protect = async (req, res, next) => {
   let token;
