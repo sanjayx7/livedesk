@@ -159,12 +159,19 @@ function initSocket(server) {
         // Broadcast to session room (so user and assigned agent see it)
         io.to(`session_${currentSessionId}`).emit('message:new', userMsg);
 
-        // Notify all online agents (for dashboard audio notifications)
-        io.to('agents_' + (session.projectId || 'default')).emit('notification:new_message', {
-          sessionId: session._id,
-          visitorId: session.visitorId,
-          text: userMsg.text
-        });
+        // Notify all online agents (only if session is active OR if agents are online and business is open)
+        const bhSettings = await getBusinessHours(session.projectId || 'default');
+        const isBusinessOpen = isWithinBusinessHours(bhSettings);
+        const onlineAgentsCount = await Agent.countDocuments({ status: 'online' });
+        const hasOnlineAgents = onlineAgentsCount > 0;
+
+        if (session.status === 'active' || (isBusinessOpen && hasOnlineAgents)) {
+          io.to('agents_' + (session.projectId || 'default')).emit('notification:new_message', {
+            sessionId: session._id,
+            visitorId: session.visitorId,
+            text: userMsg.text
+          });
+        }
         
         // Update session's update time
         session.updatedAt = new Date();
@@ -172,13 +179,23 @@ function initSocket(server) {
         
         broadcastSessionList(session.projectId);
 
-        // Auto-route back to Bot Mode if outside business hours or no agents online
-        if (session.status === 'active') {
-          const bhSettings = await getBusinessHours(session.projectId || 'default');
-          const isBusinessOpen = isWithinBusinessHours(bhSettings);
-          const onlineAgentsCount = await Agent.countDocuments({ status: 'online' });
-          const hasOnlineAgents = onlineAgentsCount > 0;
+        // Re-open closed chats as 'bot'
+        if (session.status === 'closed') {
+          session.status = 'bot';
+          session.assignedAgent = null;
+          await session.save();
+          
+          const statusChangePayload = { status: 'bot', assignedAgent: null };
+          io.to(`session_${currentSessionId}`).emit('session:status_changed', statusChangePayload);
+          io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', {
+            sessionId: session._id,
+            ...statusChangePayload
+          });
+          broadcastSessionList(session.projectId);
+        }
 
+        // Auto-route active chats back to 'bot' if outside business hours or no agents online
+        if (session.status === 'active') {
           if (!isBusinessOpen || !hasOnlineAgents) {
             session.status = 'bot';
             session.assignedAgent = null;
