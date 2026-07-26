@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 
 const connectDB = require('./config/db');
 const Agent = require('./models/Agent');
+const Session = require('./models/Session');
 const KBItem = require('./models/KBItem');
 const Setting = require('./models/Setting');
 const { addDocument, queryKnowledgeBase } = require('./services/rag');
