@@ -10,16 +10,21 @@ const DEFAULT_HOURS = {
 };
 
 async function getBusinessHours(projectId = 'default') {
-  let doc = await Setting.findOne({ key: 'business_hours', projectId });
-  if (!doc) {
-    try {
-      doc = await Setting.create({ key: 'business_hours', projectId, value: DEFAULT_HOURS });
-    } catch (e) {
-      // Handle concurrency or duplicate key race condition
-      doc = await Setting.findOne({ key: 'business_hours', projectId });
+  try {
+    let doc = await Setting.findOne({ key: 'business_hours', projectId });
+    if (!doc) {
+      try {
+        doc = await Setting.create({ key: 'business_hours', projectId, value: DEFAULT_HOURS });
+      } catch (e) {
+        // Handle concurrency or duplicate key race condition
+        doc = await Setting.findOne({ key: 'business_hours', projectId });
+      }
     }
+    return doc ? doc.value : DEFAULT_HOURS;
+  } catch (err) {
+    console.error("Error fetching business hours:", err);
+    return DEFAULT_HOURS;
   }
-  return doc.value;
 }
 
 async function updateBusinessHours(value, projectId = 'default') {

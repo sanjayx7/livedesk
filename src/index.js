@@ -202,16 +202,21 @@ app.get('/api/settings/business-hours', protect, async (req, res) => {
 app.get('/api/settings/branding', protect, async (req, res) => {
   const { projectId } = req.query;
   const pid = projectId || 'default';
+  const defaultBranding = { chatbotName: 'AI Chatbot', teamSubtitle: 'Support Representative' };
   try {
     let doc = await Setting.findOne({ key: 'widget_branding', projectId: pid });
     if (!doc) {
-      doc = await Setting.create({
-        key: 'widget_branding',
-        projectId: pid,
-        value: { chatbotName: 'AI Chatbot', teamSubtitle: 'Support Representative' }
-      });
+      try {
+        doc = await Setting.create({
+          key: 'widget_branding',
+          projectId: pid,
+          value: defaultBranding
+        });
+      } catch (err) {
+        doc = await Setting.findOne({ key: 'widget_branding', projectId: pid });
+      }
     }
-    res.json(doc.value);
+    res.json(doc ? doc.value : defaultBranding);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
