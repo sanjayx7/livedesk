@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const Agent = require('./models/Agent');
 const Session = require('./models/Session');
 const Message = require('./models/Message');
+const Setting = require('./models/Setting');
 const { queryKnowledgeBase, generateAnswer } = require('./services/rag');
 const { getBusinessHours, isWithinBusinessHours } = require('./services/businessHours');
 
