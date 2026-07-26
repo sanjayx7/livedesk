@@ -31,6 +31,10 @@ const sessionSchema = new mongoose.Schema({
     email: { type: String, default: '' },
     phone: { type: String, default: '' },
   },
+  unreadCount: {
+    type: Number,
+    default: 0,
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Session', sessionSchema);

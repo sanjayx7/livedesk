@@ -21,7 +21,12 @@
     let socket = io(serverUrl);
     let session = null;
     let typingTimeout = null;
-    let brandingConfig = { chatbotName: 'AI Chatbot', teamSubtitle: 'Support Representative' };
+    
+    // Load branding from localStorage cache (or default) immediately
+    const cachedBranding = localStorage.getItem(`livedesk_branding_${projectId}`);
+    let brandingConfig = cachedBranding
+      ? JSON.parse(cachedBranding)
+      : { chatbotName: 'AI Chatbot', teamSubtitle: 'Support Representative' };
 
     // Create container for widget and attach shadow DOM
     const container = document.createElement('div');
@@ -142,6 +147,13 @@
     const leadPhone = shadow.getElementById('ld-lead-phone');
     const leadBtnSkip = shadow.getElementById('ld-lead-btn-skip');
     const suggestedQuestionsBox = shadow.getElementById('ld-suggested-questions-box');
+
+    // Apply cached branding immediately so name is correct before socket connects
+    if (headerTitle) headerTitle.textContent = brandingConfig.chatbotName || 'AI Chatbot';
+    if (headerStatus) {
+      headerStatus.textContent = 'Knowledge Assistant';
+      headerStatus.style.color = '#3b82f6';
+    }
 
     const defaultQuestions = {
       'default': [
@@ -301,7 +313,11 @@
 
     socket.on('visitor:init', (data) => {
       session = data.session;
-      if (data.branding) brandingConfig = data.branding;
+      if (data.branding) {
+        brandingConfig = data.branding;
+        // Cache branding so it loads instantly next time
+        localStorage.setItem(`livedesk_branding_${projectId}`, JSON.stringify(data.branding));
+      }
       updateHeader(session);
       renderSuggestedQuestions();
 

@@ -310,6 +310,10 @@ function connectSocket(token) {
   });
 
   socket.on('notification:new_message', (data) => {
+    // Show who sent the message
+    const sessionEntry = sessions.find(s => s._id === (data.sessionId?.toString?.() || data.sessionId));
+    const visitorName = sessionEntry?.visitorInfo?.name || (data.visitorId ? `Visitor #${data.visitorId.substring(0, 5)}` : 'A visitor');
+    showToastNotification(visitorName, data.text);
     // Play audio warning when a new visitor message arrives
     startAlarmSound();
   });
@@ -368,6 +372,11 @@ function renderSessions() {
     const pageSubtitle = session.visitorInfo?.title || 'Viewing Site';
     const relativeTime = getRelativeTime(session.updatedAt);
 
+    const unread = session.unreadCount || 0;
+    const unreadBadge = unread > 0 && session._id !== currentSessionId
+      ? `<div class="chat-unread-badge">${unread > 99 ? '99+' : unread}</div>`
+      : '';
+
     item.innerHTML = `
       <div class="chat-item-avatar">${initial}</div>
       <div class="chat-item-info">
@@ -377,6 +386,7 @@ function renderSessions() {
         </div>
         <div class="chat-item-preview">${pageSubtitle}</div>
       </div>
+      ${unreadBadge}
     `;
 
     if (session.status === 'active') {
@@ -405,6 +415,15 @@ chatSearchInput.addEventListener('input', renderSessions);
 
 function selectSession(sessionId) {
   currentSessionId = sessionId;
+
+  // Reset unread count locally and on server
+  const session = sessions.find(s => s._id === sessionId);
+  if (session && session.unreadCount > 0) {
+    session.unreadCount = 0;
+    if (socket) {
+      socket.emit('agent:mark_read', { sessionId });
+    }
+  }
 
   // Highlight in sidebar
   document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('selected'));
@@ -1102,6 +1121,56 @@ function updateDashboardHistory() {
 }
 
 // --- ALARM SOUND FUNCTIONS ---
+
+// Show notification toast with visitor name and message preview
+function showToastNotification(visitorName, messageText) {
+  // Remove existing toast if any
+  const existingToast = document.getElementById('ld-notification-toast');
+  if (existingToast) existingToast.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'ld-notification-toast';
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--primary);
+    border-radius: var(--border-radius-md);
+    padding: 14px 18px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    z-index: 9999;
+    max-width: 300px;
+    min-width: 220px;
+    animation: slideInToast 0.3s ease-out;
+    cursor: pointer;
+  `;
+  const preview = messageText ? (messageText.length > 60 ? messageText.substring(0, 57) + '...' : messageText) : 'New message';
+  toast.innerHTML = `
+    <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:4px;">💬 New message</div>
+    <div style="font-weight:700; color:var(--text-main); margin-bottom:4px;">${escapeHTML(visitorName)}</div>
+    <div style="font-size:0.85rem; color:var(--text-dark);">${escapeHTML(preview)}</div>
+  `;
+  toast.addEventListener('click', () => {
+    // Try to find and open this session
+    const matchedSession = sessions.find(s => {
+      const name = s.visitorInfo?.name || `Visitor #${s.visitorId.substring(0, 5)}`;
+      return name === visitorName;
+    });
+    if (matchedSession) {
+      selectSession(matchedSession._id);
+      // Switch to chats tab
+      document.querySelector('[data-tab="chats"]')?.click();
+    }
+    toast.remove();
+  });
+
+  document.body.appendChild(toast);
+
+  // Auto-remove after 6 seconds
+  setTimeout(() => toast.remove(), 6000);
+}
 
 function startAlarmSound() {
   if (isAlarmPlaying) return;

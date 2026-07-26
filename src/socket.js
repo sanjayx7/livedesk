@@ -160,6 +160,11 @@ function initSocket(server) {
         // Broadcast to session room (so user and assigned agent see it)
         io.to(`session_${targetSessionId}`).emit('message:new', userMsg);
 
+        // Increment unread count (reset when agent joins)
+        if (session.status !== 'active') {
+          session.unreadCount = (session.unreadCount || 0) + 1;
+        }
+
         // Fetch real-time open/online status
         const bhSettings = await getBusinessHours(session.projectId || 'default');
         const isBusinessOpen = isWithinBusinessHours(bhSettings);
@@ -315,6 +320,7 @@ function initSocket(server) {
         if (session) {
           session.status = 'active';
           session.assignedAgent = currentAgent._id;
+          session.unreadCount = 0; // Reset unread on agent takeover
           await session.save();
 
           socket.join(`session_${sessionId}`);
@@ -359,6 +365,22 @@ function initSocket(server) {
         broadcastSessionList(session.projectId);
       } catch (err) {
         console.error("Error in agent:message:", err);
+      }
+    });
+
+    // Agent marks session as read (resets unread count)
+    socket.on('agent:mark_read', async (data) => {
+      if (!currentAgent) return;
+      const { sessionId } = data;
+      try {
+        const session = await Session.findById(sessionId);
+        if (session) {
+          session.unreadCount = 0;
+          await session.save();
+          broadcastSessionList(session.projectId);
+        }
+      } catch (err) {
+        console.error("Error in agent:mark_read:", err);
       }
     });
 
