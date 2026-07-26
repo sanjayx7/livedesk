@@ -234,6 +234,11 @@ function connectSocket(token) {
     
     // Switch project room
     socket.emit('agent:select_project', { projectId: activeProjectId });
+
+    // Restore active chat session room membership on reconnect
+    if (currentSessionId) {
+      socket.emit('agent:join_chat', { sessionId: currentSessionId });
+    }
   });
 
   socket.on('disconnect', () => {

@@ -181,7 +181,7 @@
         btn.textContent = q;
         btn.type = 'button';
         btn.addEventListener('click', () => {
-          socket.emit('visitor:message', { text: q });
+          socket.emit('visitor:message', { text: q, sessionId: session ? session._id : null });
           
           // Hide suggested questions temporarily until response
           suggestedQuestionsBox.classList.add('ld-hidden');
@@ -280,21 +280,23 @@
 
     // --- SOCKET INTEGRATION ---
 
-    // Register visitor session details (include saved profile data)
-    const savedName = localStorage.getItem('livedesk_visitor_name') || '';
-    const savedEmail = localStorage.getItem('livedesk_visitor_email') || '';
-    const savedPhone = localStorage.getItem('livedesk_visitor_phone') || '';
+    // Register visitor session details (include saved profile data on connection/reconnection)
+    socket.on('connect', () => {
+      const savedName = localStorage.getItem('livedesk_visitor_name') || '';
+      const savedEmail = localStorage.getItem('livedesk_visitor_email') || '';
+      const savedPhone = localStorage.getItem('livedesk_visitor_phone') || '';
 
-    socket.emit('visitor:register', {
-      projectId,
-      visitorId,
-      pageUrl: window.location.href,
-      pageTitle: document.title,
-      referrer: document.referrer,
-      userAgent: navigator.userAgent,
-      name: savedName,
-      email: savedEmail,
-      phone: savedPhone
+      socket.emit('visitor:register', {
+        projectId,
+        visitorId,
+        pageUrl: window.location.href,
+        pageTitle: document.title,
+        referrer: document.referrer,
+        userAgent: navigator.userAgent,
+        name: savedName,
+        email: savedEmail,
+        phone: savedPhone
+      });
     });
 
     socket.on('visitor:init', (data) => {
@@ -371,7 +373,7 @@
       const text = messageInput.value.trim();
       if (!text) return;
 
-      socket.emit('visitor:message', { text });
+      socket.emit('visitor:message', { text, sessionId: session ? session._id : null });
       messageInput.value = '';
 
       // Reset typing state

@@ -142,11 +142,12 @@ function initSocket(server) {
 
     // Handle incoming message from visitor
     socket.on('visitor:message', async (data) => {
-      const { text } = data;
-      if (!currentSessionId) return;
+      const { text, sessionId } = data;
+      const targetSessionId = sessionId || currentSessionId;
+      if (!targetSessionId) return;
 
       try {
-        const session = await Session.findById(currentSessionId);
+        let session = await Session.findById(targetSessionId);
         if (!session) return;
 
         // Save visitor message
@@ -157,72 +158,61 @@ function initSocket(server) {
         });
 
         // Broadcast to session room (so user and assigned agent see it)
-        io.to(`session_${currentSessionId}`).emit('message:new', userMsg);
+        io.to(`session_${targetSessionId}`).emit('message:new', userMsg);
 
-        // Notify all online agents (only if session is active OR if agents are online and business is open)
+        // Fetch real-time open/online status
         const bhSettings = await getBusinessHours(session.projectId || 'default');
         const isBusinessOpen = isWithinBusinessHours(bhSettings);
         const onlineAgentsCount = await Agent.countDocuments({ status: 'online' });
         const hasOnlineAgents = onlineAgentsCount > 0;
+        const isSystemOnline = isBusinessOpen && hasOnlineAgents;
 
-        if (session.status === 'active' || (isBusinessOpen && hasOnlineAgents)) {
+        // Auto routing / status updates
+        if (isSystemOnline) {
+          // Normal mode (Open & Agents online): ensure status is active (human support)
+          if (session.status !== 'active') {
+            session.status = 'active';
+            await session.save();
+            
+            const statusChangePayload = { status: 'active', assignedAgent: session.assignedAgent };
+            io.to(`session_${targetSessionId}`).emit('session:status_changed', statusChangePayload);
+            io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', {
+              sessionId: session._id,
+              ...statusChangePayload
+            });
+          }
+
+          // Trigger dashboard audio alert alarm for active human agent takeover
           io.to('agents_' + (session.projectId || 'default')).emit('notification:new_message', {
             sessionId: session._id,
             visitorId: session.visitorId,
             text: userMsg.text
           });
-        }
-        
-        // Update session's update time
-        session.updatedAt = new Date();
-        await session.save();
-        
-        broadcastSessionList(session.projectId);
-
-        // Re-open closed chats as 'bot'
-        if (session.status === 'closed') {
-          session.status = 'bot';
-          session.assignedAgent = null;
-          await session.save();
-          
-          const statusChangePayload = { status: 'bot', assignedAgent: null };
-          io.to(`session_${currentSessionId}`).emit('session:status_changed', statusChangePayload);
-          io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', {
-            sessionId: session._id,
-            ...statusChangePayload
-          });
-          broadcastSessionList(session.projectId);
-        }
-
-        // Auto-route active chats back to 'bot' if outside business hours or no agents online
-        if (session.status === 'active') {
-          if (!isBusinessOpen || !hasOnlineAgents) {
+        } else {
+          // Auto mode (Offline/Closed): ensure status is bot (AI support)
+          if (session.status !== 'bot') {
             session.status = 'bot';
             session.assignedAgent = null;
             await session.save();
             
             const statusChangePayload = { status: 'bot', assignedAgent: null };
-            io.to(`session_${currentSessionId}`).emit('session:status_changed', statusChangePayload);
+            io.to(`session_${targetSessionId}`).emit('session:status_changed', statusChangePayload);
             io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', {
               sessionId: session._id,
               ...statusChangePayload
             });
-            broadcastSessionList(session.projectId);
           }
         }
+
+        // Update session's update time
+        session.updatedAt = new Date();
+        await session.save();
+        broadcastSessionList(session.projectId);
 
         // If session status is bot, trigger RAG chatbot response
         if (session.status === 'bot') {
           // Send typing indicator for bot
-          io.to(`session_${currentSessionId}`).emit('bot:typing', true);
-
-          // Get business hours settings
-          const bhSettings = await getBusinessHours(session.projectId || 'default');
-          const isBusinessOpen = isWithinBusinessHours(bhSettings);
-          
-          // Check if any agent is online
-          const onlineAgentsCount = await Agent.countDocuments({ status: 'online' });
-          const hasOnlineAgents = onlineAgentsCount > 0;
+          io.to(`session_${targetSessionId}`).emit('bot:typing', true);
 
           // Perform knowledge retrieval and generation
           const relevantChunks = await queryKnowledgeBase(text, session.projectId || 'default', 3);
@@ -236,8 +226,8 @@ function initSocket(server) {
               text: botResponseText
             });
 
-            io.to(`session_${currentSessionId}`).emit('bot:typing', false);
-            io.to(`session_${currentSessionId}`).emit('message:new', botMsg);
+            io.to(`session_${targetSessionId}`).emit('bot:typing', false);
+            io.to(`session_${targetSessionId}`).emit('message:new', botMsg);
             
             session.updatedAt = new Date();
             await session.save();
