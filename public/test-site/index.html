@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apex Cloud Solutions - Modern Enterprise Infrastructure</title>
+  <meta name="description" content="Next-generation cloud architecture, high-availability clusters, and automated database scaling for high-growth technical teams.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: hsl(222, 47%, 11%);
+      --bg-card: hsl(222, 40%, 15%);
+      --primary: hsl(190, 90%, 50%); /* Vibrant Cyan */
+      --secondary: hsl(263, 85%, 64%); /* Violet */
+      --text-main: hsl(210, 20%, 98%);
+      --text-muted: hsl(218, 12%, 68%);
+      --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    
+    header {
+      background-color: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 40px;
+    }
+    
+    .logo {
+      font-weight: 800;
+      font-size: 1.4rem;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      cursor: pointer;
+    }
+    
+    nav {
+      display: flex;
+      gap: 24px;
+    }
+    
+    nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: var(--transition-smooth);
+      position: relative;
+      cursor: pointer;
+    }
+    
+    nav a:hover, nav a.active {
+      color: var(--primary);
+    }
+    
+    /* Underline animation */
+    nav a::after {
+      content: '';
+      position: absolute;
+      width: 0;
+      height: 2px;
+      bottom: -4px;
+      left: 0;
+      background-color: var(--primary);
+      transition: var(--transition-smooth);
+    }
+    nav a.active::after {
+      width: 100%;
+    }
+
+    main {
+      padding-top: 120px;
+      max-width: 1200px;
+      margin: 0 auto;
+      min-height: calc(100vh - 120px);
+    }
+
+    .hero-section {
+      text-align: center;
+      padding: 80px 20px;
+      animation: fadeIn 0.8s ease-out;
+    }
+
+    h1 {
+      font-size: 3.5rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 24px;
+      line-height: 1.1;
+      background: linear-gradient(to right, #fff, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-section p {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 0 auto 40px;
+    }
+
+    .btn-cta {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      color: #0f172a;
+      font-weight: 700;
+      text-decoration: none;
+      padding: 14px 28px;
+      border-radius: 30px;
+      font-size: 1rem;
+      box-shadow: 0 4px 20px rgba(6, 182, 212, 0.3);
+      transition: var(--transition-smooth);
+      display: inline-block;
+      cursor: pointer;
+    }
+    .btn-cta:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(6, 182, 212, 0.5);
+    }
+
+    /* Grid cards layout */
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 32px;
+      padding: 60px 20px;
+    }
+
+    .feature-card {
+      background-color: var(--bg-card);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      padding: 32px;
+      transition: var(--transition-smooth);
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(6, 182, 212, 0.2);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+    .feature-card h3 {
+      font-size: 1.3rem;
+      margin-bottom: 12px;
+      color: var(--primary);
+    }
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    /* Inner page views (simulated) */
+    .page-view {
+      display: none;
+      padding: 40px 20px;
+      animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .page-view.active {
+      display: block;
+    }
+
+    /* Pricing styles */
+    .pricing-table {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      flex-wrap: wrap;
+      margin-top: 40px;
+    }
+    .pricing-card {
+      background-color: var(--bg-card);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      padding: 40px;
+      width: 320px;
+      text-align: center;
+      transition: var(--transition-smooth);
+    }
+    .pricing-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--secondary);
+    }
+    .pricing-card.premium {
+      border-color: var(--primary);
+      position: relative;
+    }
+    .pricing-card.premium::before {
+      content: 'POPULAR';
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: var(--primary);
+      color: #0f172a;
+      font-size: 0.75rem;
+      font-weight: 800;
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+    .price {
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin: 20px 0;
+    }
+    .price span {
+      font-size: 1rem;
+      color: var(--text-muted);
+    }
+    .pricing-features {
+      list-style: none;
+      margin-bottom: 30px;
+      text-align: left;
+    }
+    .pricing-features li {
+      margin-bottom: 12px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    .pricing-features li::before {
+      content: '✓';
+      color: var(--primary);
+      margin-right: 8px;
+      font-weight: 700;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo" id="logo-btn">APEX</div>
+    <nav id="main-nav">
+      <a class="active" data-page="home" id="link-home">Home</a>
+      <a data-page="features" id="link-features">Features</a>
+      <a data-page="pricing" id="link-pricing">Pricing</a>
+      <a data-page="contact" id="link-contact">Contact</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- HOME PAGE -->
+    <div id="page-home" class="page-view active">
+      <section class="hero-section">
+        <h1>High-Performance Cloud Infrastructure</h1>
+        <p>Apex delivers cloud provisioning, server automation, and scaling modules for enterprises that demand zero downtime and maximum developer velocity.</p>
+        <button class="btn-cta" onclick="navigateTo('features')">Explore Features</button>
+      </section>
+
+      <div class="grid-container">
+        <div class="feature-card">
+          <h3>Automated Provisioning</h3>
+          <p>Spin up isolated server architectures in seconds. Declarative configuration rules make deploying complex nodes straightforward and reproducible.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Load Balancing</h3>
+          <p>Direct traffic intelligently with built-in latency-aware load balancers that optimize delivery routing globally and protect against high spike limits.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Integrated Vector Cache</h3>
+          <p>Accelerate your neural nets and searches using our fully integrated, self-hosted, distributed vector data storage solution.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- FEATURES PAGE -->
+    <div id="page-features" class="page-view">
+      <section class="hero-section">
+        <h1>Apex Feature Catalog</h1>
+        <p>Discover our core modules designed to streamline pipeline operations, cluster hosting, and server configurations.</p>
+      </section>
+      
+      <div class="grid-container">
+        <div class="feature-card">
+          <h3>Edge Deployments</h3>
+          <p>Run computing scripts closer to users. Minimizes round-trip network times and ensures instant response curves for dynamic dashboards.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Continuous Backups</h3>
+          <p>Never lose data. Features continuous real-time replication with incremental backups that encrypt and sync automatically to isolated offsite nodes.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Developer API</h3>
+          <p>Automate everything. Integrate infrastructure tasks directly into your CI/CD pipelines using our fully documented, secure REST and GraphQL endpoints.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRICING PAGE -->
+    <div id="page-pricing" class="page-view">
+      <section class="hero-section">
+        <h1>Transparent Pricing</h1>
+        <p>Simple tiered packages designed to fit teams of any scale, from early stage startups to global enterprises.</p>
+      </section>
+
+      <div class="pricing-table">
+        <div class="pricing-card">
+          <h3>Developer</h3>
+          <div class="price">$29<span>/month</span></div>
+          <ul class="pricing-features">
+            <li>Up to 5 Projects</li>
+            <li>10 GB Storage</li>
+            <li>Basic Load Balancer</li>
+            <li>Community Support</li>
+          </ul>
+          <button class="btn-cta" onclick="alert('Thank you for choosing Developer plan!')">Get Started</button>
+        </div>
+        
+        <div class="pricing-card premium">
+          <h3>Professional</h3>
+          <div class="price">$99<span>/month</span></div>
+          <ul class="pricing-features">
+            <li>Unlimited Projects</li>
+            <li>100 GB SSD Storage</li>
+            <li>Advanced Load Balancer</li>
+            <li>Integrated Vector Database</li>
+            <li>Priority 24/7 Support</li>
+          </ul>
+          <button class="btn-cta" onclick="alert('Thank you for choosing Professional plan!')">Get Started</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTACT PAGE -->
+    <div id="page-contact" class="page-view">
+      <section class="hero-section">
+        <h1>Get in Touch</h1>
+        <p>Have questions about Apex? Our technical engineers are online and ready to assist with deployment configurations.</p>
+      </section>
+
+      <div style="max-width: 500px; margin: 0 auto; background-color: var(--bg-card); padding: 32px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.05);">
+        <h3 style="margin-bottom: 20px; font-weight: 700; color: var(--primary);">Leave a Message</h3>
+        <form onsubmit="event.preventDefault(); alert('Message sent!');" style="display: flex; flex-direction: column; gap: 16px;">
+          <input type="text" placeholder="Your Name" required style="background-color: var(--bg-dark); border: 1px solid rgba(255, 255, 255, 0.1); padding: 12px; border-radius: 8px; color: white;">
+          <input type="email" placeholder="Your Email" required style="background-color: var(--bg-dark); border: 1px solid rgba(255, 255, 255, 0.1); padding: 12px; border-radius: 8px; color: white;">
+          <textarea placeholder="How can we help?" rows="5" required style="background-color: var(--bg-dark); border: 1px solid rgba(255, 255, 255, 0.1); padding: 12px; border-radius: 8px; color: white; resize: none;"></textarea>
+          <button type="submit" class="btn-cta">Submit Form</button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Navigation routing simulation
+    const navLinks = document.querySelectorAll('#main-nav a');
+    const pageViews = document.querySelectorAll('.page-view');
+
+    function navigateTo(pageId) {
+      // Update active link classes
+      navLinks.forEach(link => {
+        if (link.dataset.page === pageId) {
+          link.classList.add('active');
+        } else {
+          link.classList.remove('active');
+        }
+      });
+
+      // Update page view displays
+      pageViews.forEach(view => {
+        if (view.id === `page-${pageId}`) {
+          view.classList.add('active');
+        } else {
+          view.classList.remove('active');
+        }
+      });
+
+      // Update document details
+      let pageTitle = 'Apex Cloud Solutions';
+      if (pageId === 'home') pageTitle = 'Apex Cloud Solutions - Modern Enterprise Infrastructure';
+      else if (pageId === 'features') pageTitle = 'Apex Catalog - Edge Deployments & Backups';
+      else if (pageId === 'pricing') pageTitle = 'Apex Pricing - Simple Tiered Packages';
+      else if (pageId === 'contact') pageTitle = 'Contact Apex - Support & Inquiries';
+
+      document.title = pageTitle;
+
+      // Dispatch tracking update to the widget socket
+      const widgetRoot = document.getElementById('livedesk-chat-widget-root');
+      if (widgetRoot && widgetRoot.shadowRoot) {
+        // We will trigger page tracking socket signals inside widget.js by checking title/URL changes.
+        // To do this simply, we will emit page views dynamically by dispatching custom window events,
+        // or widget.js will track window history.
+        // Let's fire a custom event that widget.js handles if needed. Or we can just let widget.js poll or listen.
+        // Since both are on the same page, we can dispatch a global CustomEvent!
+        window.dispatchEvent(new CustomEvent('livedesk:pagechange', {
+          detail: { pageUrl: window.location.origin + '/' + pageId, pageTitle }
+        }));
+      }
+    }
+
+    navLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        navigateTo(link.dataset.page);
+      });
+    });
+
+    document.getElementById('logo-btn').addEventListener('click', () => navigateTo('home'));
+  </script>
+
+  <!-- Embed LiveDesk Chat Widget -->
+  <script src="/widget/widget.js" id="livedesk-widget-script"></script>
+
+  <script>
+    // Link the custom pagechange event inside window to notify widget socket
+    window.addEventListener('livedesk:pagechange', (e) => {
+      // Find the widget shadow DOM and look for Socket connection
+      // Actually, since socket is in the script wrapper scope, we can just intercept
+      // the event directly inside widget.js by listening to 'livedesk:pagechange'!
+      // That is incredibly elegant and works natively!
+    });
+  </script>
+</body>
+</html>

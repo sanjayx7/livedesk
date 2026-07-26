@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiveDesk - Agent Dashboard</title>
+  <meta name="description" content="Manage real-time customer conversations, configure AI chatbots, track visitor page navigation, and customize support business hours.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-container" class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="logo-badge">LD</div>
+        <h1>Welcome back</h1>
+        <p>Please enter your credentials to access the LiveDesk dashboard</p>
+      </div>
+      <form id="login-form" class="login-form">
+        <div class="form-group">
+          <label for="login-username">Username</label>
+          <input type="text" id="login-username" placeholder="e.g. admin" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <div id="login-error" class="error-alert hidden">Invalid credentials</div>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-login-submit">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Dashboard App Screen (Hidden initially) -->
+  <div id="app-container" class="app-container hidden">
+    <!-- Main Left Sidebar -->
+    <aside class="sidebar-main">
+      <div class="sidebar-logo">
+        <span class="logo-icon">LD</span>
+        <span class="logo-text">Live<span>Desk</span></span>
+      </div>
+
+      <!-- Project Selector Menu -->
+      <div class="project-selector-wrapper">
+        <div class="project-select-container">
+          <i data-lucide="folder"></i>
+          <select id="project-dropdown-select" class="project-select">
+            <!-- Dynamic options -->
+          </select>
+        </div>
+        <button class="btn-create-project" id="btn-create-project-modal" title="Create New Project">+</button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-tab="dashboard" id="nav-tab-dashboard">
+          <i data-lucide="line-chart"></i>
+          <span>Dashboard</span>
+        </button>
+        <button class="nav-item" data-tab="chats" id="nav-tab-chats">
+          <i data-lucide="message-square"></i>
+          <span>Chats</span>
+        </button>
+        <button class="nav-item" data-tab="kb" id="nav-tab-kb">
+          <i data-lucide="database"></i>
+          <span>Knowledge Base</span>
+        </button>
+        <button class="nav-item" data-tab="settings" id="nav-tab-settings">
+          <i data-lucide="sliders"></i>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="agent-profile">
+          <div class="agent-avatar" id="agent-avatar-char">A</div>
+          <div class="agent-details">
+            <h4 id="agent-display-name">Agent Name</h4>
+            <span class="agent-role" id="agent-display-role">Agent</span>
+          </div>
+        </div>
+        
+        <div class="agent-status-toggle">
+          <label class="status-switch">
+            <input type="checkbox" id="agent-status-checkbox">
+            <span class="slider"></span>
+          </label>
+          <span class="status-text" id="agent-status-label">Offline</span>
+        </div>
+
+        <button class="btn btn-logout" id="btn-logout" title="Sign Out">
+          <i data-lucide="log-out"></i>
+          <span>Sign Out</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Sub-sidebar and Main Panels based on active tab -->
+    <main class="main-content">
+      
+      <!-- DASHBOARD TAB PANEL -->
+      <section id="tab-panel-dashboard" class="tab-panel active">
+        <div class="tab-scroll-container">
+          <div class="dashboard-header">
+            <div>
+              <h2>Analytics Insights</h2>
+              <p>Real-time updates and traffic trends for the selected project</p>
+            </div>
+            <div class="dashboard-toggle-group">
+              <button class="dashboard-toggle-btn active" id="dashboard-toggle-weekly">Weekly</button>
+              <button class="dashboard-toggle-btn" id="dashboard-toggle-monthly">Monthly</button>
+            </div>
+          </div>
+          
+          <div class="dashboard-layout-grid">
+            <!-- Left column: graph & history table -->
+            <div class="dashboard-left-column">
+              <!-- Live Visitors graph card -->
+              <div class="chart-card live-visitors-chart-card">
+                <div class="chart-card-header">
+                  <div class="chart-header-left">
+                    <i data-lucide="activity"></i>
+                    <h3>Live Visitors (Traffic Volume)</h3>
+                  </div>
+                  <span class="live-indicator">
+                    <span class="pulse-dot"></span>
+                    Live Now
+                  </span>
+                </div>
+                <div class="chart-container" id="trend-chart-container">
+                  <!-- CSS Bars dynamically rendered -->
+                </div>
+              </div>
+
+              <!-- Visitor Session History Card -->
+              <div class="chart-card dashboard-history-card">
+                <div class="chart-card-header">
+                  <div class="chart-header-left">
+                    <i data-lucide="history"></i>
+                    <h3>Visitor Session History</h3>
+                  </div>
+                </div>
+                <div class="table-responsive">
+                  <table class="dashboard-table">
+                    <thead>
+                      <tr>
+                        <th>Visitor</th>
+                        <th>Location / Agent</th>
+                        <th>Status</th>
+                        <th>Last Active</th>
+                      </tr>
+                    </thead>
+                    <tbody id="dashboard-history-tbody">
+                      <!-- Dynamic rows injected via JS -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right column: metrics grid & banner -->
+            <div class="dashboard-right-column">
+              <!-- Visitors box -->
+              <div class="dashboard-metric-box">
+                <div class="metric-header">
+                  <span class="metric-title">Visitors</span>
+                  <span class="metric-period">Today</span>
+                </div>
+                <div class="metric-value-row">
+                  <h2 id="metric-today-visitors">0</h2>
+                  <span class="metric-badge trend-down">
+                    <i data-lucide="trending-down"></i> 24.5%
+                  </span>
+                </div>
+                <span class="metric-caption">Active Visitors: <strong id="metric-active-visitors">0</strong></span>
+              </div>
+
+              <!-- Chats box -->
+              <div class="dashboard-metric-box">
+                <div class="metric-header">
+                  <span class="metric-title">Chats</span>
+                  <span class="metric-period">Total</span>
+                </div>
+                <div class="metric-value-row">
+                  <h2 id="metric-total-chats">0</h2>
+                  <span class="metric-badge trend-up">
+                    <i data-lucide="trending-up"></i> 100%
+                  </span>
+                </div>
+                <div class="metric-sub-stats">
+                  <div>
+                    <label>Active Chats</label>
+                    <span id="metric-chats-active">0</span>
+                  </div>
+                  <div>
+                    <label>Missed Chats</label>
+                    <span>0</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Page Views box -->
+              <div class="dashboard-metric-box">
+                <div class="metric-header">
+                  <span class="metric-title">Page Views</span>
+                  <span class="metric-period">Today</span>
+                </div>
+                <div class="metric-value-row">
+                  <h2 id="metric-today-views">0</h2>
+                  <span class="metric-badge trend-down">
+                    <i data-lucide="trending-down"></i> 43.8%
+                  </span>
+                </div>
+                <span class="metric-caption">Last 7 days: <strong id="metric-week-views">0</strong></span>
+              </div>
+
+              <!-- AI Power banner -->
+              <div class="dashboard-ai-banner">
+                <div class="ai-banner-gradient-bg"></div>
+                <div class="ai-banner-content">
+                  <div class="ai-icon-wrapper">
+                    <i data-lucide="sparkles"></i>
+                  </div>
+                  <div class="ai-banner-text">
+                    <h4>Access the power of AI</h4>
+                    <p>Index documents under your Knowledge Base to fully automate customer chats outside work hours.</p>
+                    <a href="#" class="ai-banner-link" id="ai-banner-learn-more">Learn more &rarr;</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CHATS TAB PANEL -->
+      <section id="tab-panel-chats" class="tab-panel">
+        <div class="chat-layout">
+          <!-- Conversation list sub-sidebar -->
+          <div class="conversation-sidebar">
+            <div class="panel-header">
+              <div class="panel-header-title-row">
+                <h2>Conversations</h2>
+                <button id="btn-stop-alarm" class="btn btn-danger btn-stop-alarm hidden" title="Stop Alarm">
+                  <i data-lucide="volume-x"></i> Stop Alarm
+                </button>
+              </div>
+              <div class="chat-search">
+                <i data-lucide="search"></i>
+                <input type="text" id="chat-search-input" placeholder="Search chats...">
+              </div>
+            </div>
+            
+            <div class="conversation-lists">
+              <div class="section-title">Active Chats</div>
+              <div class="list-group" id="list-active-chats">
+                <!-- Injected via JS -->
+                <div class="empty-state-list">No active chats</div>
+              </div>
+
+              <div class="section-title">Bot Conversations</div>
+              <div class="list-group" id="list-bot-chats">
+                <!-- Injected via JS -->
+                <div class="empty-state-list">No active bot chats</div>
+              </div>
+
+              <div class="section-title">Closed Chats</div>
+              <div class="list-group" id="list-closed-chats">
+                <!-- Injected via JS -->
+                <div class="empty-state-list">No closed chats</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Chat Window -->
+          <div class="chat-window" id="active-chat-window">
+            <!-- Header -->
+            <div class="chat-header hidden" id="chat-window-header">
+              <div class="visitor-meta-brief">
+                <button class="btn-back-list" id="btn-back-to-list" title="Back to List">
+                  <i data-lucide="arrow-left"></i>
+                </button>
+                <div class="visitor-avatar">V</div>
+                <div>
+                  <h3 id="chat-visitor-title">Visitor #1234</h3>
+                  <span id="chat-visitor-subtitle">Viewing Apex Home</span>
+                </div>
+              </div>
+              
+              <div class="chat-actions">
+                <span class="status-tag tag-bot" id="chat-status-tag">Bot Mode</span>
+                <button class="btn btn-sm btn-success hidden" id="btn-takeover">
+                  <i data-lucide="user-check"></i> Take Over
+                </button>
+                <button class="btn btn-sm btn-secondary hidden" id="btn-handoff-bot">
+                  <i data-lucide="bot"></i> Transfer to Bot
+                </button>
+                <button class="btn btn-sm btn-danger hidden" id="btn-close-chat">
+                  <i data-lucide="check-circle2"></i> Close Chat
+                </button>
+              </div>
+            </div>
+
+            <!-- Messages Stream -->
+            <div class="chat-messages-container" id="chat-messages-scroll">
+              <div class="empty-chat-state" id="empty-chat-state">
+                <i data-lucide="message-square" class="large-icon"></i>
+                <h3>No conversation selected</h3>
+                <p>Select a visitor chat from the sidebar to view details and start messaging.</p>
+              </div>
+              <div class="messages-list hidden" id="messages-list-flow">
+                <!-- Messages injected dynamically -->
+              </div>
+              
+              <!-- Typing Indicator -->
+              <div class="typing-indicator-wrapper hidden" id="visitor-typing-indicator">
+                <div class="typing-bubble">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                <span class="typing-label">Visitor is typing...</span>
+              </div>
+            </div>
+
+            <!-- Message Input Area -->
+            <div class="chat-input-area hidden" id="chat-input-wrapper">
+              <form id="chat-composer-form" class="chat-composer-form">
+                <input type="text" id="chat-message-input" placeholder="Type a message... (Press Enter to send)" autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-round" id="btn-send-message" title="Send Message">
+                  <i data-lucide="send"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Visitor Details Panel -->
+          <div class="visitor-details-sidebar hidden" id="visitor-details-panel">
+            <div class="panel-header">
+              <h3>Visitor Details</h3>
+            </div>
+            
+            <div class="details-body">
+              <div class="detail-section">
+                <h4>Contact Info</h4>
+                <div class="detail-item">
+                  <i data-lucide="user"></i>
+                  <div>
+                    <label>Name</label>
+                    <span id="detail-visitor-name">--</span>
+                  </div>
+                </div>
+                <div class="detail-item">
+                  <i data-lucide="mail"></i>
+                  <div>
+                    <label>Email</label>
+                    <span id="detail-visitor-email">--</span>
+                  </div>
+                </div>
+                <div class="detail-item">
+                  <i data-lucide="phone"></i>
+                  <div>
+                    <label>Phone</label>
+                    <span id="detail-visitor-phone">--</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-section">
+                <h4>Device & Network</h4>
+                <div class="detail-item">
+                  <i data-lucide="globe"></i>
+                  <div>
+                    <label>IP Address</label>
+                    <span id="detail-visitor-ip">--</span>
+                  </div>
+                </div>
+                <div class="detail-item">
+                  <i data-lucide="monitor"></i>
+                  <div>
+                    <label>User Agent</label>
+                    <span id="detail-visitor-ua">--</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-section">
+                <h4>Navigation Details</h4>
+                <div class="detail-item">
+                  <i data-lucide="compass"></i>
+                  <div>
+                    <label>Referrer</label>
+                    <span id="detail-visitor-referrer">--</span>
+                  </div>
+                </div>
+                <div class="detail-item">
+                  <i data-lucide="eye"></i>
+                  <div>
+                    <label>Current Page URL</label>
+                    <a href="#" target="_blank" id="detail-visitor-url">--</a>
+                  </div>
+                </div>
+                <div class="detail-item">
+                  <i data-lucide="bookmark"></i>
+                  <div>
+                    <label>Page Title</label>
+                    <span id="detail-visitor-title">--</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- KNOWLEDGE BASE TAB PANEL -->
+      <section id="tab-panel-kb" class="tab-panel">
+        <div class="tab-scroll-container">
+          <div class="panel-hero">
+            <h1>Knowledge Base</h1>
+            <p>Upload documents and FAQs to train your RAG-powered chatbot. The bot will automatically split the document, generate semantic embeddings, and answer visitor questions when you're unavailable.</p>
+          </div>
+
+          <div class="kb-layout">
+            <!-- Add document form -->
+            <div class="kb-form-card">
+              <h3>Add New Document</h3>
+              <form id="kb-upload-form" class="kb-form">
+                <div class="form-group">
+                  <label for="kb-doc-title">Document Title / Topic</label>
+                  <input type="text" id="kb-doc-title" placeholder="e.g. Refund Policy, Company FAQs" required>
+                </div>
+                <div class="form-group">
+                  <label for="kb-doc-content">Content / Body</label>
+                  <textarea id="kb-doc-content" rows="12" placeholder="Paste full articles, rules, or questions & answers here. Use plain text or markdown..." required></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" id="btn-kb-submit">
+                  <i data-lucide="upload-cloud"></i> Index Document
+                </button>
+              </form>
+            </div>
+
+            <!-- Documents inventory -->
+            <div class="kb-inventory-card">
+              <h3>Indexed Documents</h3>
+              <div class="kb-list-container" id="kb-documents-list">
+                <!-- Injected dynamically -->
+                <div class="empty-inventory">
+                  <i data-lucide="file-text"></i>
+                  <p>No knowledge base documents indexed yet.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SETTINGS TAB PANEL -->
+      <section id="tab-panel-settings" class="tab-panel">
+        <div class="tab-scroll-container">
+          <div class="panel-hero">
+            <h1>System Settings</h1>
+            <p>Configure business hours to automate support coverage. Outside of configured business hours, all incoming chats will automatically route to the AI Chatbot.</p>
+          </div>
+
+          <div class="settings-layout">
+            <!-- Theme Settings Card -->
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <i data-lucide="palette" class="card-icon"></i>
+                <div>
+                  <h3>Theme Customization</h3>
+                  <p>Choose your preferred dashboard appearance theme.</p>
+                </div>
+              </div>
+              <form id="settings-theme-form" class="settings-form" onsubmit="event.preventDefault();">
+                <div class="settings-toggle-row">
+                  <div>
+                    <label class="toggle-heading">Enable Light Mode Appearance</label>
+                    <p class="toggle-description">Toggle this switch to instantly switch between Light Mode and Dark Mode.</p>
+                  </div>
+                  <label class="status-switch">
+                    <input type="checkbox" id="settings-theme-toggle">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </form>
+            </div>
+
+            <!-- Widget Installation Code card -->
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <i data-lucide="code" class="card-icon"></i>
+                <div>
+                  <h3>Widget Installation Code</h3>
+                  <p>Copy and paste this script tag inside the HTML of the website where you want the chat widget to appear.</p>
+                </div>
+              </div>
+              <div class="form-group" style="padding: 0 20px 20px; box-sizing: border-box;">
+                <label>Script Embed Code</label>
+                <div class="copy-code-container">
+                  <pre class="code-snippet-box"><code id="settings-widget-code-snippet">&lt;script id="livedesk-widget-script" src="http://localhost:3000/widget/widget.js?project=default"&gt;&lt;/script&gt;</code></pre>
+                  <button class="btn btn-primary btn-copy-code" id="btn-copy-widget-code" title="Copy to clipboard">
+                    <i data-lucide="copy"></i> Copy Code
+                  </button>
+                </div>
+                <div id="copy-success-alert" class="success-alert hidden" style="margin-top: 10px; margin-bottom: 0;">Snippet copied to clipboard!</div>
+              </div>
+            </div>
+
+            <!-- Widget Branding card -->
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <i data-lucide="message-square" class="card-icon"></i>
+                <div>
+                  <h3>Widget Branding Settings</h3>
+                  <p>Customize the chatbot name and team subtitle shown to visitors.</p>
+                </div>
+              </div>
+              <form id="settings-branding-form" class="settings-form">
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label for="settings-chatbot-name">Chatbot Name</label>
+                    <input type="text" id="settings-chatbot-name" placeholder="e.g. AI Chatbot" required>
+                  </div>
+                  <div class="form-group">
+                    <label for="settings-team-subtitle">Support Team Subtitle</label>
+                    <input type="text" id="settings-team-subtitle" placeholder="e.g. Support Representative" required>
+                  </div>
+                </div>
+                <div class="settings-form-footer">
+                  <div id="branding-success-alert" class="success-alert hidden">Branding saved successfully!</div>
+                  <button type="submit" class="btn btn-primary" id="btn-save-branding">
+                    <i data-lucide="save"></i> Save Branding
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Business Hours card -->
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <i data-lucide="clock" class="card-icon"></i>
+                <div>
+                  <h3>Business Hours Scheduler</h3>
+                  <p>Define when your human agents are actively available.</p>
+                </div>
+              </div>
+
+              <form id="settings-hours-form" class="settings-form">
+                <div class="settings-toggle-row">
+                  <div>
+                    <label class="toggle-heading">Enable Business Hours</label>
+                    <p class="toggle-description">Enable to automatically force Bot Mode outside selected workdays & hours.</p>
+                  </div>
+                  <label class="status-switch">
+                    <input type="checkbox" id="settings-hours-enabled">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label for="settings-timezone">Timezone</label>
+                    <select id="settings-timezone" required>
+                      <option value="America/New_York">Eastern Time (ET)</option>
+                      <option value="America/Chicago">Central Time (CT)</option>
+                      <option value="America/Denver">Mountain Time (MT)</option>
+                      <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                      <option value="UTC">Coordinated Universal Time (UTC)</option>
+                      <option value="Europe/London">London (GMT/BST)</option>
+                      <option value="Europe/Paris">Central European Time (CET)</option>
+                      <option value="Asia/Calcutta">Kolkata (IST)</option>
+                      <option value="Asia/Tokyo">Tokyo (JST)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <!-- spacing -->
+                  </div>
+                  <div class="form-group">
+                    <label for="settings-start-time">Start Time</label>
+                    <input type="time" id="settings-start-time" required>
+                  </div>
+                  <div class="form-group">
+                    <label for="settings-end-time">End Time</label>
+                    <input type="time" id="settings-end-time" required>
+                  </div>
+                </div>
+
+                <div class="form-group select-days-group">
+                  <label>Active Business Days</label>
+                  <div class="day-checkbox-grid">
+                    <label class="day-checkbox">
+                      <input type="checkbox" value="1" class="day-checkbox-input">
+                      <span>Mon</span>
+                    </label>
+                    <label class="day-checkbox">
+                      <input type="checkbox" value="2" class="day-checkbox-input">
+                      <span>Tue</span>
+                    </label>
+                    <label class="day-checkbox">
+                      <input type="checkbox" value="3" class="day-checkbox-input">
+                      <span>Wed</span>
+                    </label>
+                    <label class="day-checkbox">
+                      <input type="checkbox" value="4" class="day-checkbox-input">
+                      <span>Thu</span>
+                    </label>
+                    <label class="day-checkbox">
+                      <input type="checkbox" value="5" class="day-checkbox-input">
+                      <span>Fri</span>
+                    </label>
+                    <label class="day-checkbox bg-weekend">
+                      <input type="checkbox" value="6" class="day-checkbox-input">
+                      <span>Sat</span>
+                    </label>
+                    <label class="day-checkbox bg-weekend">
+                      <input type="checkbox" value="0" class="day-checkbox-input">
+                      <span>Sun</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="settings-form-footer">
+                  <div id="settings-success-alert" class="success-alert hidden">Settings saved successfully!</div>
+                  <button type="submit" class="btn btn-primary" id="btn-save-settings">
+                    <i data-lucide="save"></i> Save Settings
+                  </button>
+                </div>
+              </form>
+            </div>
+            
+            <!-- Agent registration for admins -->
+            <div class="settings-card hidden" id="admin-registration-card">
+              <div class="settings-card-header">
+                <i data-lucide="user-plus" class="card-icon"></i>
+                <div>
+                  <h3>Register New Agent</h3>
+                  <p>Create credentials for new team support agents.</p>
+                </div>
+              </div>
+
+              <form id="agent-register-form" class="settings-form">
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label for="reg-username">Username</label>
+                    <input type="text" id="reg-username" placeholder="e.g. sam" required>
+                  </div>
+                  <div class="form-group">
+                    <label for="reg-password">Password</label>
+                    <input type="password" id="reg-password" placeholder="••••••••" required>
+                  </div>
+                  <div class="form-group">
+                    <label for="reg-role">Role</label>
+                    <select id="reg-role" required>
+                      <option value="agent">Support Agent</option>
+                      <option value="admin">Administrator</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="settings-form-footer">
+                  <div id="reg-success-alert" class="success-alert hidden">Agent registered successfully!</div>
+                  <div id="reg-error-alert" class="error-alert hidden">Error registering agent</div>
+                  <button type="submit" class="btn btn-primary" id="btn-submit-register">
+                    <i data-lucide="plus"></i> Register Agent
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Onboarding overlay when no projects exist -->
+    <div id="project-onboarding-overlay" class="onboarding-overlay hidden">
+      <div class="onboarding-card">
+        <div class="onboarding-header">
+          <div class="logo-badge">LD</div>
+          <h1>Create your first Project</h1>
+          <p>Before you can view chats, index documents, or configure chatbot settings, you need to create your first project space.</p>
+        </div>
+        <form id="onboarding-project-form" class="onboarding-form" onsubmit="event.preventDefault();">
+          <div class="form-group">
+            <label for="onboarding-project-name">Project / Property Name</label>
+            <input type="text" id="onboarding-project-name" placeholder="e.g. My Website, Acme App" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="btn-onboarding-submit">Create Project & Get Started</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lucide Icons & Socket.io Client libraries -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

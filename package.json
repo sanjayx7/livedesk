@@ -1,0 +1,22 @@
+{
+  "name": "livedesk",
+  "version": "1.0.0",
+  "description": "A self-hosted live chat platform for company websites — real-time visitor messaging, an agent dashboard with visitor tracking, and automatic handoff to a RAG-powered chatbot when no agent is available (after business hours). Built with Node.js, Express, Socket.io, MongoDB, and a self-hosted vector DB for knowledge base retrieval.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.8.0",
+    "socket.io": "^4.8.3"
+  }
+}
