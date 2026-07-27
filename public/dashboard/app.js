@@ -70,7 +70,7 @@ const detailVisitorPhone = document.getElementById('detail-visitor-phone');
 const btnBackToList = document.getElementById('btn-back-to-list');
 
 // Projects & Themes & Dashboard UI
-let activeProjectId = localStorage.getItem('ld_active_project_id') || 'default';
+let activeProjectId = localStorage.getItem('ld_active_project_id') || null;
 let activeDashboardRange = 'weekly'; // 'weekly' | 'monthly'
 
 const projectDropdownSelect = document.getElementById('project-dropdown-select');
@@ -230,13 +230,21 @@ function connectSocket(token) {
 
   socket.on('connect', () => {
     console.log("Socket connected successfully!");
-    agentStatusCheckbox.checked = true;
-    agentStatusLabel.textContent = "Online";
-    agentStatusLabel.style.color = "var(--success)";
+    const savedStatus = localStorage.getItem('ld_agent_status') || 'online';
+    const isOnline = savedStatus === 'online';
+    agentStatusCheckbox.checked = isOnline;
+    agentStatusLabel.textContent = isOnline ? "Online" : "Offline";
+    agentStatusLabel.style.color = isOnline ? "var(--success)" : "var(--text-muted)";
+
+    if (socket) {
+      socket.emit('agent:status_toggle', { status: savedStatus });
+    }
     
     if (!isFirstConnect) {
       // On reconnect: re-emit project room (loadProjects already ran)
-      socket.emit('agent:select_project', { projectId: activeProjectId });
+      if (activeProjectId) {
+        socket.emit('agent:select_project', { projectId: activeProjectId });
+      }
 
       // Restore active chat session room membership on reconnect
       if (currentSessionId) {
@@ -339,6 +347,7 @@ if (btnStopAlarm) {
 // Agent Manual status toggle switch
 agentStatusCheckbox.addEventListener('change', (e) => {
   const status = e.target.checked ? 'online' : 'offline';
+  localStorage.setItem('ld_agent_status', status);
   if (socket) {
     socket.emit('agent:status_toggle', { status });
     agentStatusLabel.textContent = status.charAt(0).toUpperCase() + status.slice(1);
@@ -588,6 +597,7 @@ chatMessageInput.addEventListener('input', () => {
 // --- KNOWLEDGE BASE LOGIC ---
 
 async function loadKB() {
+  if (!activeProjectId) return;
   try {
     const res = await fetch(`/api/kb?projectId=${activeProjectId}`, {
       headers: {
@@ -694,6 +704,7 @@ window.deleteKBDocument = async function(title) {
 // --- SETTINGS LOGIC ---
 
 async function loadSettings() {
+  if (!activeProjectId) return;
   try {
     const res = await fetch(`/api/settings/business-hours?projectId=${activeProjectId}`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('ld_token')}` }
@@ -719,6 +730,11 @@ async function loadSettings() {
       const brandingData = await brandingRes.json();
       if (settingsChatbotName) settingsChatbotName.value = brandingData.chatbotName || 'AI Chatbot';
       if (settingsTeamSubtitle) settingsTeamSubtitle.value = brandingData.teamSubtitle || 'Support Representative';
+      const settingsQuickQuestions = document.getElementById('settings-quick-questions');
+      if (settingsQuickQuestions) {
+        const qList = Array.isArray(brandingData.suggestedQuestions) ? brandingData.suggestedQuestions : [];
+        settingsQuickQuestions.value = qList.join('\n');
+      }
     }
   } catch (err) {
     console.error("Error loading settings:", err);
@@ -768,6 +784,12 @@ if (settingsBrandingForm) {
     e.preventDefault();
     const chatbotName = settingsChatbotName.value.trim();
     const teamSubtitle = settingsTeamSubtitle.value.trim();
+    const settingsQuickQuestions = document.getElementById('settings-quick-questions');
+    const rawQuestions = settingsQuickQuestions ? settingsQuickQuestions.value : '';
+    const suggestedQuestions = rawQuestions
+      .split('\n')
+      .map(q => q.trim())
+      .filter(q => q.length > 0);
 
     try {
       const res = await fetch('/api/settings/branding', {
@@ -778,7 +800,7 @@ if (settingsBrandingForm) {
         },
         body: JSON.stringify({
           projectId: activeProjectId,
-          branding: { chatbotName, teamSubtitle }
+          branding: { chatbotName, teamSubtitle, suggestedQuestions }
         })
       });
 
@@ -1282,7 +1304,8 @@ lucide.createIcons();
 function updateWidgetCodeSnippet() {
   if (!settingsWidgetCodeSnippet) return;
   const origin = window.location.origin;
-  const code = `<script id="livedesk-widget-script" src="${origin}/widget/widget.js?project=${activeProjectId}"></script>`;
+  const pid = activeProjectId || 'YOUR_PROJECT_ID';
+  const code = `<script id="livedesk-widget-script" src="${origin}/widget/widget.js?project=${pid}"></script>`;
   settingsWidgetCodeSnippet.textContent = code;
 }
 

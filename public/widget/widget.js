@@ -155,18 +155,11 @@
       headerStatus.style.color = '#3b82f6';
     }
 
-    const defaultQuestions = {
-      'default': [
-        "What is LiveDesk?",
-        "How do I set up the chat widget?",
-        "How can I talk to a human agent?"
-      ],
-      'project_salesroute': [
-        "What is SalesRoute AI?",
-        "Tell me about the features",
-        "How can I request a demo?"
-      ]
-    };
+    const defaultFallbackQuestions = [
+      "What services do you offer?",
+      "How does pricing work?",
+      "How can I talk to a human agent?"
+    ];
 
     function renderSuggestedQuestions() {
       if (!suggestedQuestionsBox) return;
@@ -186,7 +179,10 @@
 
       suggestedQuestionsBox.classList.remove('ld-hidden');
       
-      const list = defaultQuestions[projectId] || defaultQuestions['default'];
+      const list = (brandingConfig && Array.isArray(brandingConfig.suggestedQuestions) && brandingConfig.suggestedQuestions.length > 0)
+        ? brandingConfig.suggestedQuestions
+        : defaultFallbackQuestions;
+
       list.forEach(q => {
         const btn = document.createElement('button');
         btn.className = 'ld-suggested-btn';

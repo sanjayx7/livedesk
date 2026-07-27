@@ -18,37 +18,35 @@ async function getEmbedding(text) {
   return Array.from(output.data);
 }
 
-// Simple text chunker
-function chunkText(text, maxChunkSize = 500, overlap = 100) {
-  const paragraphs = text.split(/\n+/);
+// Clean and smart text chunker
+function chunkText(text, maxChunkSize = 400) {
+  // First split by explicit markdown section dividers (---) or multiple newlines
+  const sections = text.split(/(?:\n\s*---\s*\n|\n\s*\n\s*\n)/);
   const chunks = [];
-  let currentChunk = '';
 
-  for (let paragraph of paragraphs) {
-    paragraph = paragraph.trim();
-    if (!paragraph) continue;
+  for (let section of sections) {
+    section = section.trim();
+    if (!section) continue;
 
-    if ((currentChunk + '\n' + paragraph).length <= maxChunkSize) {
-      currentChunk = currentChunk ? currentChunk + '\n' + paragraph : paragraph;
+    // If section is under max size, add directly
+    if (section.length <= maxChunkSize) {
+      chunks.push(section);
     } else {
-      if (currentChunk) {
-        chunks.push(currentChunk);
-      }
-      if (paragraph.length > maxChunkSize) {
-        let remaining = paragraph;
-        while (remaining.length > 0) {
-          chunks.push(remaining.substring(0, maxChunkSize));
-          remaining = remaining.substring(maxChunkSize - overlap);
-          if (remaining.length <= overlap) break;
+      // Split large sections by paragraphs
+      const paragraphs = section.split(/\n+/);
+      let currentChunk = '';
+      for (let p of paragraphs) {
+        p = p.trim();
+        if (!p) continue;
+        if ((currentChunk + '\n' + p).length <= maxChunkSize) {
+          currentChunk = currentChunk ? currentChunk + '\n' + p : p;
+        } else {
+          if (currentChunk) chunks.push(currentChunk);
+          currentChunk = p;
         }
-        currentChunk = '';
-      } else {
-        currentChunk = paragraph;
       }
+      if (currentChunk) chunks.push(currentChunk);
     }
-  }
-  if (currentChunk) {
-    chunks.push(currentChunk);
   }
   return chunks;
 }
@@ -114,6 +112,7 @@ async function generateAnswer(queryText, contextChunks) {
   // 1. Try Groq API
   if (process.env.GROQ_API_KEY) {
     try {
+      console.log("Generating AI response via Groq API (LLaMA 3.1)...");
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -125,7 +124,7 @@ async function generateAnswer(queryText, contextChunks) {
           messages: [
             {
               role: 'system',
-              content: `You are a helpful live-chat assistant. Use the following retrieved knowledge base context to answer the user's question. If the context does not contain the answer, answer naturally and offer to connect them to a human support representative. Keep the answer short (under 3 sentences) and professional.\n\nContext:\n${contextText}`
+              content: `You are a helpful live-chat assistant. Use the provided context to answer the user's question. If you cannot answer based on the context, respond with: "I'm sorry, I can't answer that right now. Would you like me to connect you to a support agent?". Never mention internal phrases like "knowledge base", "context", or "chunks". Keep answers short (under 3 sentences) and conversational.\n\nContext:\n${contextText}`
             },
             {
               role: 'user',
@@ -149,7 +148,7 @@ async function generateAnswer(queryText, contextChunks) {
   if (process.env.GEMINI_API_KEY) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
-      const prompt = `You are a helpful live-chat assistant. Use the following retrieved knowledge base context to answer the user's question. If the context does not contain the answer, answer naturally and offer to connect them to a human support representative. Keep the answer short (under 3 sentences) and professional.
+      const prompt = `You are a helpful live-chat assistant. Use the provided context to answer the user's question. If you cannot answer based on the context, respond with: "I'm sorry, I can't answer that right now. Would you like me to connect you to a support agent?". Never mention internal phrases like "knowledge base", "context", or "chunks". Keep answers short (under 3 sentences) and conversational.
       
 Context:
 ${contextText}
@@ -187,7 +186,7 @@ Answer:`;
           messages: [
             {
               role: 'system',
-              content: `You are a helpful live-chat assistant. Use the following retrieved knowledge base context to answer the user's question. If the context does not contain the answer, answer naturally and offer to connect them to a human support representative. Keep the answer short (under 3 sentences) and professional.\n\nContext:\n${contextText}`
+              content: `You are a helpful live-chat assistant. Use the provided context to answer the user's question. If you cannot answer based on the context, respond with: "I'm sorry, I can't answer that right now. Would you like me to connect you to a support agent?". Never mention internal phrases like "knowledge base", "context", or "chunks". Keep answers short (under 3 sentences) and conversational.\n\nContext:\n${contextText}`
             },
             {
               role: 'user',
@@ -230,11 +229,22 @@ Answer:`;
   }
 
   // 5. Default Local Semantic Search QA Fallback
-  if (contextChunks.length > 0 && contextChunks[0].score > 0.4) {
-    return `Based on our knowledge base, here is what I found:\n\n"${contextChunks[0].content}"\n\nHope this helps! Let me know if you would like to speak to a human agent.`;
+  if (contextChunks.length > 0 && contextChunks[0].score > 0.18) {
+    const raw = contextChunks[0].content;
+    const cleanText = raw
+      .replace(/^---+$/gm, '')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^Q:\s*/gm, '')
+      .replace(/^A:\s*/gm, '')
+      .replace(/Hope this helps!/gi, '')
+      .trim();
+
+    if (cleanText) {
+      return cleanText;
+    }
   }
 
-  return "I'm sorry, I couldn't find an answer to your question in our knowledge base. Would you like me to connect you to a human agent?";
+  return "I'm sorry, I can't answer that right now. Would you like me to connect you to a support agent?";
 }
 
 module.exports = {

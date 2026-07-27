@@ -1,7 +1,7 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: [path.join(__dirname, '../.env'), path.join(__dirname, '.env')] });
 const express = require('express');
 const http = require('http');
-const path = require('path');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 
@@ -208,7 +208,15 @@ app.get('/api/settings/business-hours', protect, async (req, res) => {
 app.get('/api/settings/branding', protect, async (req, res) => {
   const { projectId } = req.query;
   const pid = projectId || 'default';
-  const defaultBranding = { chatbotName: 'AI Chatbot', teamSubtitle: 'Support Representative' };
+  const defaultBranding = {
+    chatbotName: 'AI Chatbot',
+    teamSubtitle: 'Support Representative',
+    suggestedQuestions: [
+      "What services do you offer?",
+      "How does pricing work?",
+      "How can I talk to a human agent?"
+    ]
+  };
   try {
     let doc = await Setting.findOne({ key: 'widget_branding', projectId: pid });
     if (!doc) {
@@ -264,7 +272,7 @@ app.get('/api/projects', protect, async (req, res) => {
     if (!doc) {
       doc = await Setting.create({
         key: 'projects_list',
-        value: [{ id: 'default', name: 'Default Project' }]
+        value: []
       });
     }
     res.json(doc.value);
@@ -285,12 +293,12 @@ app.post('/api/projects', protect, async (req, res) => {
     if (!doc) {
       doc = new Setting({
         key: 'projects_list',
-        value: [{ id: 'default', name: 'Default Project' }]
+        value: []
       });
     }
     
     const newId = 'project_' + Math.random().toString(36).substring(2, 9);
-    const updatedList = [...doc.value, { id: newId, name: name.trim() }];
+    const updatedList = [...(doc.value || []), { id: newId, name: name.trim() }];
     doc.value = updatedList;
     doc.markModified('value');
     await doc.save();
