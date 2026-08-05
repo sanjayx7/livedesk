@@ -4,10 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LiveDesk - Agent Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <meta name="description" content="Manage real-time customer conversations, configure AI chatbots, track visitor page navigation, and customize support business hours.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -45,12 +48,26 @@
 
       <!-- Project Selector Menu -->
       <div class="project-selector-wrapper">
-        <div class="project-select-container">
-          <i data-lucide="folder"></i>
-          <select id="project-dropdown-select" class="project-select">
-            <!-- Dynamic options -->
-          </select>
+        <div class="custom-dropdown-container" id="project-custom-dropdown">
+          <button type="button" class="custom-dropdown-trigger" id="project-dropdown-trigger">
+            <i data-lucide="folder" class="dropdown-trigger-icon"></i>
+            <span id="project-dropdown-label" class="dropdown-trigger-label">Select Project</span>
+            <i data-lucide="chevron-down" class="dropdown-trigger-arrow"></i>
+          </button>
+          <div class="custom-dropdown-menu hidden" id="project-dropdown-menu">
+            <div class="custom-dropdown-list" id="project-dropdown-items">
+              <!-- Dynamic project items -->
+            </div>
+            <div class="custom-dropdown-divider"></div>
+            <button type="button" class="custom-dropdown-action" id="btn-create-project-dropdown">
+              <i data-lucide="plus-circle"></i>
+              <span>Create New Project</span>
+            </button>
+          </div>
         </div>
+        <select id="project-dropdown-select" class="project-select hidden">
+          <!-- Hidden fallback select -->
+        </select>
         <button class="btn-create-project" id="btn-create-project-modal" title="Create New Project">+</button>
       </div>
 
@@ -62,6 +79,11 @@
         <button class="nav-item" data-tab="chats" id="nav-tab-chats">
           <i data-lucide="message-square"></i>
           <span>Chats</span>
+          <span class="nav-tab-badge hidden" id="nav-chats-unread-count">0</span>
+        </button>
+        <button class="nav-item" data-tab="leads" id="nav-tab-leads">
+          <i data-lucide="users"></i>
+          <span>Leads</span>
         </button>
         <button class="nav-item" data-tab="kb" id="nav-tab-kb">
           <i data-lucide="database"></i>
@@ -147,7 +169,8 @@
                     <thead>
                       <tr>
                         <th>Visitor</th>
-                        <th>Location / Agent</th>
+                        <th>Location & IP</th>
+                        <th>Device & OS</th>
                         <th>Status</th>
                         <th>Last Active</th>
                       </tr>
@@ -160,7 +183,7 @@
               </div>
             </div>
 
-            <!-- Right column: metrics grid & banner -->
+            <!-- Right column: metrics grid -->
             <div class="dashboard-right-column">
               <!-- Visitors box -->
               <div class="dashboard-metric-box">
@@ -214,21 +237,6 @@
                   </span>
                 </div>
                 <span class="metric-caption">Last 7 days: <strong id="metric-week-views">0</strong></span>
-              </div>
-
-              <!-- AI Power banner -->
-              <div class="dashboard-ai-banner">
-                <div class="ai-banner-gradient-bg"></div>
-                <div class="ai-banner-content">
-                  <div class="ai-icon-wrapper">
-                    <i data-lucide="sparkles"></i>
-                  </div>
-                  <div class="ai-banner-text">
-                    <h4>Access the power of AI</h4>
-                    <p>Index documents under your Knowledge Base to fully automate customer chats outside work hours.</p>
-                    <a href="#" class="ai-banner-link" id="ai-banner-learn-more">Learn more &rarr;</a>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -415,6 +423,87 @@
         </div>
       </section>
 
+      <!-- LEADS TAB PANEL -->
+      <section id="tab-panel-leads" class="tab-panel">
+        <div class="tab-scroll-container">
+          <div class="panel-hero">
+            <h1>Visitor Leads Directory</h1>
+            <p>Filter, search, and manage lead contact details captured from website chat visitors.</p>
+          </div>
+
+          <div class="leads-toolbar-card">
+            <div class="leads-filter-row">
+              <div class="filter-group">
+                <label for="leads-start-date">Start Date</label>
+                <div class="date-input-wrapper">
+                  <i data-lucide="calendar"></i>
+                  <input type="text" id="leads-start-date" class="filter-input custom-date-input" placeholder="Select Start Date">
+                </div>
+              </div>
+              <div class="filter-group">
+                <label for="leads-end-date">End Date</label>
+                <div class="date-input-wrapper">
+                  <i data-lucide="calendar"></i>
+                  <input type="text" id="leads-end-date" class="filter-input custom-date-input" placeholder="Select End Date">
+                </div>
+              </div>
+              <div class="filter-group filter-presets">
+                <label>Quick Presets</label>
+                <div class="preset-btn-group">
+                  <button type="button" class="btn btn-outline btn-sm preset-btn" data-preset="today">Today</button>
+                  <button type="button" class="btn btn-outline btn-sm preset-btn" data-preset="yesterday">Yesterday</button>
+                  <button type="button" class="btn btn-outline btn-sm preset-btn active" data-preset="7days">Last 7 Days</button>
+                  <button type="button" class="btn btn-outline btn-sm preset-btn" data-preset="30days">Last 30 Days</button>
+                  <button type="button" class="btn btn-outline btn-sm preset-btn" data-preset="all">All Time</button>
+                </div>
+              </div>
+              <div class="filter-group filter-search-group">
+                <label for="leads-search-input">Search Leads</label>
+                <div class="search-input-wrapper">
+                  <i data-lucide="search"></i>
+                  <input type="text" id="leads-search-input" placeholder="Search name, email, phone..." class="filter-input">
+                </div>
+              </div>
+              <div class="filter-group filter-actions">
+                <label>&nbsp;</label>
+                <button type="button" class="btn btn-success" id="btn-export-leads-csv">
+                  <i data-lucide="download"></i> Export CSV
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="chart-card leads-table-card">
+            <div class="chart-card-header">
+              <div class="chart-header-left">
+                <i data-lucide="users"></i>
+                <h3>Captured Leads (<span id="leads-count-total">0</span>)</h3>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="dashboard-table">
+                <thead>
+                  <tr>
+                    <th>Visitor Name</th>
+                    <th>Email Address</th>
+                    <th>Phone</th>
+                    <th>Captured Date & Time</th>
+                    <th>Landing Page / URL</th>
+                    <th>Location / IP</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="leads-table-tbody">
+                  <tr>
+                    <td colspan="7" class="empty-table">Loading lead records...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- KNOWLEDGE BASE TAB PANEL -->
       <section id="tab-panel-kb" class="tab-panel">
         <div class="tab-scroll-container">
@@ -510,33 +599,160 @@
               </div>
             </div>
 
-            <!-- Widget Branding card -->
-            <div class="settings-card">
+            <!-- Widget Branding & Visual Theme Builder card -->
+            <div class="settings-card settings-card-wide">
               <div class="settings-card-header">
-                <i data-lucide="message-square" class="card-icon"></i>
+                <i data-lucide="palette" class="card-icon"></i>
                 <div>
-                  <h3>Widget Branding Settings</h3>
-                  <p>Customize the chatbot name and team subtitle shown to visitors.</p>
+                  <h3>Widget Branding & Theme Builder</h3>
+                  <p>Customize the colors, icon, position, and messaging of your embeddable chat widget with live interactive preview.</p>
                 </div>
               </div>
-              <form id="settings-branding-form" class="settings-form">
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label for="settings-chatbot-name">Chatbot Name</label>
-                    <input type="text" id="settings-chatbot-name" placeholder="e.g. AI Chatbot" required>
+
+              <div class="theme-builder-split-grid">
+                <!-- Controls Column -->
+                <form id="settings-branding-form" class="settings-form theme-controls-form">
+                  <div class="form-grid">
+                    <div class="form-group">
+                      <label for="settings-chatbot-name">Chatbot Name</label>
+                      <input type="text" id="settings-chatbot-name" placeholder="e.g. Nora AI" required>
+                    </div>
+                    <div class="form-group">
+                      <label for="settings-team-subtitle">Support Subtitle</label>
+                      <input type="text" id="settings-team-subtitle" placeholder="e.g. Support Representative" required>
+                    </div>
+                    
+                    <div class="form-group">
+                      <label for="settings-primary-color">Primary Accent Color</label>
+                      <div class="color-picker-wrapper">
+                        <input type="color" id="settings-primary-color" value="#4f46e5">
+                        <input type="text" id="settings-primary-color-text" value="#4f46e5" class="color-hex-input">
+                      </div>
+                      <div class="color-swatches">
+                        <span class="color-swatch" style="background:#4f46e5;" data-color="#4f46e5"></span>
+                        <span class="color-swatch" style="background:#2563eb;" data-color="#2563eb"></span>
+                        <span class="color-swatch" style="background:#059669;" data-color="#059669"></span>
+                        <span class="color-swatch" style="background:#7c3aed;" data-color="#7c3aed"></span>
+                        <span class="color-swatch" style="background:#e11d48;" data-color="#e11d48"></span>
+                        <span class="color-swatch" style="background:#d97706;" data-color="#d97706"></span>
+                      </div>
+                    </div>
+
+                    <div class="form-group">
+                      <label for="settings-launcher-icon">Launcher Icon</label>
+                      <div class="custom-dropdown-container" id="dropdown-launcher-icon">
+                        <button type="button" class="custom-dropdown-trigger" id="trigger-launcher-icon">
+                          <span id="label-launcher-icon">💬 Chat Bubble</span>
+                          <i data-lucide="chevron-down" class="dropdown-trigger-arrow"></i>
+                        </button>
+                        <div class="custom-dropdown-menu hidden" id="menu-launcher-icon">
+                          <div class="custom-dropdown-list">
+                            <div class="custom-dropdown-item active" data-value="chat">💬 Chat Bubble</div>
+                            <div class="custom-dropdown-item" data-value="bot">🤖 AI Robot</div>
+                            <div class="custom-dropdown-item" data-value="sparkles">✨ Sparkles</div>
+                            <div class="custom-dropdown-item" data-value="support">🎧 Headset</div>
+                          </div>
+                        </div>
+                      </div>
+                      <select id="settings-launcher-icon" class="hidden">
+                        <option value="chat">💬 Chat Bubble</option>
+                        <option value="bot">🤖 AI Robot</option>
+                        <option value="sparkles">✨ Sparkles</option>
+                        <option value="support">🎧 Headset</option>
+                      </select>
+                    </div>
+
+                    <div class="form-group">
+                      <label for="settings-widget-position">Widget Position</label>
+                      <div class="custom-dropdown-container" id="dropdown-widget-position">
+                        <button type="button" class="custom-dropdown-trigger" id="trigger-widget-position">
+                          <span id="label-widget-position">Bottom Right</span>
+                          <i data-lucide="chevron-down" class="dropdown-trigger-arrow"></i>
+                        </button>
+                        <div class="custom-dropdown-menu hidden" id="menu-widget-position">
+                          <div class="custom-dropdown-list">
+                            <div class="custom-dropdown-item active" data-value="right">Bottom Right</div>
+                            <div class="custom-dropdown-item" data-value="left">Bottom Left</div>
+                          </div>
+                        </div>
+                      </div>
+                      <select id="settings-widget-position" class="hidden">
+                        <option value="right">Bottom Right</option>
+                        <option value="left">Bottom Left</option>
+                      </select>
+                    </div>
+
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                      <label for="settings-welcome-message">Greeting / Welcome Message</label>
+                      <input type="text" id="settings-welcome-message" placeholder="Hi there! 👋 How can we help you today?">
+                    </div>
+
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                      <label for="settings-quick-questions">Suggested Quick Questions (one per line)</label>
+                      <textarea id="settings-quick-questions" rows="3" placeholder="What services do you offer?&#10;How does pricing work?&#10;How can I talk to support?"></textarea>
+                    </div>
                   </div>
-                  <div class="form-group">
-                    <label for="settings-team-subtitle">Support Team Subtitle</label>
-                    <input type="text" id="settings-team-subtitle" placeholder="e.g. Support Representative" required>
+
+                  <div class="settings-form-footer">
+                    <div id="branding-success-alert" class="success-alert hidden">Theme & branding saved successfully!</div>
+                    <button type="submit" class="btn btn-primary" id="btn-save-branding">
+                      <i data-lucide="save"></i> Save Theme & Branding
+                    </button>
+                  </div>
+                </form>
+
+                <!-- Live Widget Preview Column -->
+                <div class="widget-preview-column">
+                  <div class="preview-card-header">
+                    <i data-lucide="eye"></i>
+                    <span>Live Widget Preview</span>
+                  </div>
+                  <div class="preview-screen-mockup">
+                    <div class="mockup-website-header">
+                      <span class="mockup-dot red"></span>
+                      <span class="mockup-dot yellow"></span>
+                      <span class="mockup-dot green"></span>
+                      <span class="mockup-url-bar">https://your-company.com</span>
+                    </div>
+                    <div class="mockup-viewport" id="preview-viewport">
+                      <!-- Live Preview Widget Window -->
+                      <div class="live-preview-widget" id="preview-widget-window">
+                        <div class="preview-widget-header" id="preview-widget-header" style="background-color: #4f46e5;">
+                          <div class="preview-header-info">
+                            <span class="preview-header-title" id="preview-bot-name">Nora AI</span>
+                            <span class="preview-header-sub" id="preview-bot-sub">Support Representative</span>
+                          </div>
+                        </div>
+                        <div class="preview-widget-body">
+                          <div class="preview-msg bot" id="preview-welcome-bubble">
+                            Hi there! 👋 How can we help you today?
+                          </div>
+                          <div class="preview-msg visitor">
+                            What services do you offer?
+                          </div>
+                          <div class="preview-msg bot">
+                            We offer real-time customer support & automated RAG knowledge base search!
+                          </div>
+                        </div>
+                        <div class="preview-widget-footer">
+                          <div class="preview-composer-bar">
+                            <input type="text" placeholder="Ask a question..." readonly>
+                            <button class="preview-send-btn" id="preview-send-btn" style="background-color: #4f46e5;">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z"/>
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="live-preview-launcher pos-right" id="preview-widget-launcher" style="background-color: #4f46e5;">
+                        <span id="preview-launcher-icon">💬</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div class="settings-form-footer">
-                  <div id="branding-success-alert" class="success-alert hidden">Branding saved successfully!</div>
-                  <button type="submit" class="btn btn-primary" id="btn-save-branding">
-                    <i data-lucide="save"></i> Save Branding
-                  </button>
-                </div>
-              </form>
+              </div>
             </div>
 
             <!-- Business Hours card -->
@@ -564,7 +780,29 @@
                 <div class="form-grid">
                   <div class="form-group">
                     <label for="settings-timezone">Timezone</label>
-                    <select id="settings-timezone" required>
+                    <div class="custom-dropdown-container" id="dropdown-timezone">
+                      <button type="button" class="custom-dropdown-trigger" id="trigger-timezone">
+                        <span id="label-timezone">Asia/Kolkata (IST +5:30)</span>
+                        <i data-lucide="chevron-down" class="dropdown-trigger-arrow"></i>
+                      </button>
+                      <div class="custom-dropdown-menu hidden" id="menu-timezone">
+                        <div class="custom-dropdown-list">
+                          <div class="custom-dropdown-item active" data-value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</div>
+                          <div class="custom-dropdown-item" data-value="America/New_York">Eastern Time (ET)</div>
+                          <div class="custom-dropdown-item" data-value="America/Chicago">Central Time (CT)</div>
+                          <div class="custom-dropdown-item" data-value="America/Denver">Mountain Time (MT)</div>
+                          <div class="custom-dropdown-item" data-value="America/Los_Angeles">Pacific Time (PT)</div>
+                          <div class="custom-dropdown-item" data-value="UTC">Coordinated Universal Time (UTC)</div>
+                          <div class="custom-dropdown-item" data-value="Europe/London">London (GMT/BST)</div>
+                          <div class="custom-dropdown-item" data-value="Europe/Paris">Central European Time (CET)</div>
+                          <div class="custom-dropdown-item" data-value="Asia/Dubai">Gulf Standard Time (GST)</div>
+                          <div class="custom-dropdown-item" data-value="Asia/Singapore">Singapore Time (SGT)</div>
+                          <div class="custom-dropdown-item" data-value="Asia/Tokyo">Japan Standard Time (JST)</div>
+                        </div>
+                      </div>
+                    </div>
+                    <select id="settings-timezone" class="hidden" required>
+                      <option value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</option>
                       <option value="America/New_York">Eastern Time (ET)</option>
                       <option value="America/Chicago">Central Time (CT)</option>
                       <option value="America/Denver">Mountain Time (MT)</option>
@@ -572,8 +810,9 @@
                       <option value="UTC">Coordinated Universal Time (UTC)</option>
                       <option value="Europe/London">London (GMT/BST)</option>
                       <option value="Europe/Paris">Central European Time (CET)</option>
-                      <option value="Asia/Calcutta">Kolkata (IST)</option>
-                      <option value="Asia/Tokyo">Tokyo (JST)</option>
+                      <option value="Asia/Dubai">Gulf Standard Time (GST)</option>
+                      <option value="Asia/Singapore">Singapore Time (SGT)</option>
+                      <option value="Asia/Tokyo">Japan Standard Time (JST)</option>
                     </select>
                   </div>
                   <div class="form-group">
@@ -654,7 +893,19 @@
                   </div>
                   <div class="form-group">
                     <label for="reg-role">Role</label>
-                    <select id="reg-role" required>
+                    <div class="custom-dropdown-container" id="dropdown-reg-role">
+                      <button type="button" class="custom-dropdown-trigger" id="trigger-reg-role">
+                        <span id="label-reg-role">Support Agent</span>
+                        <i data-lucide="chevron-down" class="dropdown-trigger-arrow"></i>
+                      </button>
+                      <div class="custom-dropdown-menu hidden" id="menu-reg-role">
+                        <div class="custom-dropdown-list">
+                          <div class="custom-dropdown-item active" data-value="agent">Support Agent</div>
+                          <div class="custom-dropdown-item" data-value="admin">Administrator</div>
+                        </div>
+                      </div>
+                    </div>
+                    <select id="reg-role" class="hidden" required>
                       <option value="agent">Support Agent</option>
                       <option value="admin">Administrator</option>
                     </select>
@@ -695,8 +946,9 @@
     </div>
   </div>
 
-  <!-- Lucide Icons & Socket.io Client libraries -->
+  <!-- Lucide Icons, Flatpickr & Socket.io Client libraries -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
 </body>

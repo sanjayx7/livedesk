@@ -1,3 +1,9 @@
+// Utility helper for safe ObjectId string comparison
+function isSameId(id1, id2) {
+  if (!id1 || !id2) return false;
+  return String(id1) === String(id2);
+}
+
 // State Management
 let socket = null;
 let currentAgent = null;
@@ -37,6 +43,7 @@ const listActiveChats = document.getElementById('list-active-chats');
 const listBotChats = document.getElementById('list-bot-chats');
 const listClosedChats = document.getElementById('list-closed-chats');
 const chatSearchInput = document.getElementById('chat-search-input');
+const navChatsUnreadCount = document.getElementById('nav-chats-unread-count');
 
 // Chat Panel
 const activeChatWindow = document.getElementById('active-chat-window');
@@ -70,7 +77,7 @@ const detailVisitorPhone = document.getElementById('detail-visitor-phone');
 const btnBackToList = document.getElementById('btn-back-to-list');
 
 // Projects & Themes & Dashboard UI
-let activeProjectId = localStorage.getItem('ld_active_project_id') || 'default';
+let activeProjectId = localStorage.getItem('ld_active_project_id') || null;
 let activeDashboardRange = 'weekly'; // 'weekly' | 'monthly'
 
 const projectDropdownSelect = document.getElementById('project-dropdown-select');
@@ -230,14 +237,22 @@ function connectSocket(token) {
 
   socket.on('connect', () => {
     console.log("Socket connected successfully!");
-    agentStatusCheckbox.checked = true;
-    agentStatusLabel.textContent = "Online";
-    agentStatusLabel.style.color = "var(--success)";
-    
-    if (!isFirstConnect) {
-      // On reconnect: re-emit project room (loadProjects already ran)
-      socket.emit('agent:select_project', { projectId: activeProjectId });
+    const savedStatus = localStorage.getItem('ld_agent_status') || 'online';
+    const isOnline = savedStatus === 'online';
+    agentStatusCheckbox.checked = isOnline;
+    agentStatusLabel.textContent = isOnline ? "Online" : "Offline";
+    agentStatusLabel.style.color = isOnline ? "var(--success)" : "var(--text-muted)";
 
+    if (socket) {
+      socket.emit('agent:status_toggle', { status: savedStatus });
+    }
+    
+    // Always sync active project room on socket connect/reconnect
+    if (activeProjectId) {
+      socket.emit('agent:select_project', { projectId: activeProjectId });
+    }
+
+    if (!isFirstConnect) {
       // Restore active chat session room membership on reconnect
       if (currentSessionId) {
         socket.emit('agent:join_chat', { sessionId: currentSessionId });
@@ -263,7 +278,7 @@ function connectSocket(token) {
     renderSessions();
     // Update currently open session details/status
     if (currentSessionId) {
-      const activeSession = sessions.find(s => s._id === currentSessionId);
+      const activeSession = sessions.find(s => isSameId(s._id, currentSessionId));
       if (activeSession) {
         updateChatHeaderAndDetails(activeSession);
       }
@@ -279,14 +294,23 @@ function connectSocket(token) {
   });
 
   socket.on('message:new', (msg) => {
-    if (currentSessionId && msg.sessionId === currentSessionId) {
+    if (currentSessionId && isSameId(msg.sessionId, currentSessionId)) {
       appendMessage(msg);
       scrollToBottom();
+      socket.emit('agent:mark_read', { sessionId: currentSessionId });
+      const s = sessions.find(item => isSameId(item._id, currentSessionId));
+      if (s) s.unreadCount = 0;
+    } else if (msg.sender === 'visitor') {
+      const s = sessions.find(item => isSameId(item._id, msg.sessionId));
+      if (s) {
+        s.unreadCount = (s.unreadCount || 0) + 1;
+      }
     }
+    renderSessions();
   });
 
   socket.on('agent:chat_history', (data) => {
-    if (currentSessionId && data.sessionId === currentSessionId) {
+    if (currentSessionId && isSameId(data.sessionId, currentSessionId)) {
       messagesListFlow.innerHTML = '';
       data.messages.forEach(appendMessage);
       scrollToBottom();
@@ -303,15 +327,16 @@ function connectSocket(token) {
   });
 
   socket.on('session:status_changed', (data) => {
-    if (currentSessionId) {
-      // Re-fetch conversation details or update locally
-      const activeSession = sessions.find(s => s._id === currentSessionId);
+    const sId = data.sessionId || data.session?._id;
+    if (currentSessionId && isSameId(sId, currentSessionId)) {
+      const activeSession = sessions.find(s => isSameId(s._id, currentSessionId));
       if (activeSession) {
         activeSession.status = data.status;
         activeSession.assignedAgent = data.assignedAgent;
         updateChatHeaderAndDetails(activeSession);
       }
     }
+    renderSessions();
   });
 
   socket.on('notification:new_message', (data) => {
@@ -339,6 +364,7 @@ if (btnStopAlarm) {
 // Agent Manual status toggle switch
 agentStatusCheckbox.addEventListener('change', (e) => {
   const status = e.target.checked ? 'online' : 'offline';
+  localStorage.setItem('ld_agent_status', status);
   if (socket) {
     socket.emit('agent:status_toggle', { status });
     agentStatusLabel.textContent = status.charAt(0).toUpperCase() + status.slice(1);
@@ -367,9 +393,23 @@ function renderSessions() {
   let botCount = 0;
   let closedCount = 0;
 
+  // Calculate total unread count across all sessions for main left sidebar tab badge
+  const totalUnread = sessions.reduce((acc, s) => acc + (s.unreadCount || 0), 0);
+  if (navChatsUnreadCount) {
+    if (totalUnread > 0) {
+      navChatsUnreadCount.textContent = totalUnread > 99 ? '99+' : totalUnread;
+      navChatsUnreadCount.classList.remove('hidden');
+    } else {
+      navChatsUnreadCount.classList.add('hidden');
+    }
+  }
+
   filtered.forEach(session => {
+    const unread = session.unreadCount || 0;
+    const isSelected = isSameId(currentSessionId, session._id);
+
     const item = document.createElement('div');
-    item.className = `chat-item ${currentSessionId === session._id ? 'selected' : ''}`;
+    item.className = `chat-item ${isSelected ? 'selected' : ''} ${unread > 0 && !isSelected ? 'unread' : ''}`;
     item.onclick = () => selectSession(session._id);
 
     const initial = (session.visitorInfo?.name?.charAt(0) || session.visitorInfo?.title?.charAt(0) || 'V').toUpperCase();
@@ -377,8 +417,7 @@ function renderSessions() {
     const pageSubtitle = session.visitorInfo?.title || 'Viewing Site';
     const relativeTime = getRelativeTime(session.updatedAt);
 
-    const unread = session.unreadCount || 0;
-    const unreadBadge = unread > 0 && session._id !== currentSessionId
+    const unreadBadge = unread > 0 && !isSelected
       ? `<div class="chat-unread-badge">${unread > 99 ? '99+' : unread}</div>`
       : '';
 
@@ -422,7 +461,7 @@ function selectSession(sessionId) {
   currentSessionId = sessionId;
 
   // Reset unread count locally and on server
-  const session = sessions.find(s => s._id === sessionId);
+  const session = sessions.find(s => isSameId(s._id, sessionId));
   if (session && session.unreadCount > 0) {
     session.unreadCount = 0;
     if (socket) {
@@ -431,7 +470,6 @@ function selectSession(sessionId) {
   }
 
   // Highlight in sidebar
-  document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('selected'));
   renderSessions();
 
   if (!session) return;
@@ -447,11 +485,68 @@ function selectSession(sessionId) {
   // Load chat header details & status buttons
   updateChatHeaderAndDetails(session);
 
-  // Fetch full conversation history via socket
-  socket.emit('agent:join_chat', { sessionId });
+  // View full conversation history via socket (without taking over automatically)
+  socket.emit('agent:view_chat', { sessionId });
   
   // Clear composer input
   chatMessageInput.value = '';
+}
+
+// --- DEVICE & GEO UTILITIES ---
+
+function getFlagEmoji(countryCode) {
+  if (!countryCode || countryCode.length !== 2) return '🌐';
+  const codePoints = countryCode
+    .toUpperCase()
+    .split('')
+    .map(char => 127397 + char.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+}
+
+function parseUserAgent(ua) {
+  if (!ua) return { os: 'Unknown OS', osBadge: '💻', browser: 'Browser', browserBadge: '🌐' };
+
+  let os = 'Desktop';
+  let osBadge = '💻';
+
+  if (/windows/i.test(ua)) {
+    os = 'Windows';
+    osBadge = '🪟';
+  } else if (/macintosh|mac os/i.test(ua)) {
+    os = 'macOS';
+    osBadge = '🍎';
+  } else if (/iphone|ipad|ipod/i.test(ua)) {
+    os = 'iOS';
+    osBadge = '📱';
+  } else if (/android/i.test(ua)) {
+    os = 'Android';
+    osBadge = '📱';
+  } else if (/linux/i.test(ua)) {
+    os = 'Linux';
+    osBadge = '🐧';
+  }
+
+  let browser = 'Browser';
+  let browserBadge = '🌐';
+
+  if (/edg/i.test(ua)) {
+    browser = 'Edge';
+    browserBadge = '🌊';
+  } else if (/chrome|crios/i.test(ua)) {
+    browser = 'Chrome';
+    browserBadge = '🌐';
+  } else if (/firefox|fxios/i.test(ua)) {
+    browser = 'Firefox';
+    browserBadge = '🦊';
+  } else if (/safari/i.test(ua) && !/chrome/i.test(ua)) {
+    browser = 'Safari';
+    browserBadge = '🧭';
+  } else if (/opr\//i.test(ua)) {
+    browser = 'Opera';
+    browserBadge = '🔴';
+  }
+
+  return { os, osBadge, browser, browserBadge };
 }
 
 function updateChatHeaderAndDetails(session) {
@@ -492,9 +587,13 @@ function updateChatHeaderAndDetails(session) {
     chatMessageInput.placeholder = "Conversation is closed...";
   }
 
-  // Sidebar navigation details
-  detailVisitorIp.textContent = session.visitorInfo?.ip || '--';
-  detailVisitorUa.textContent = session.visitorInfo?.userAgent || '--';
+  // Sidebar navigation & Geo/Device details
+  const flag = getFlagEmoji(session.visitorInfo?.countryCode);
+  const location = session.visitorInfo?.location || session.visitorInfo?.country || 'Local Network';
+  const device = parseUserAgent(session.visitorInfo?.userAgent);
+
+  detailVisitorIp.textContent = `${flag} ${session.visitorInfo?.ip || '127.0.0.1'} (${location})`;
+  detailVisitorUa.textContent = `${device.osBadge} ${device.os} • ${device.browserBadge} ${device.browser}`;
   detailVisitorReferrer.textContent = session.visitorInfo?.referrer || 'Direct Visit';
   detailVisitorUrl.href = session.visitorInfo?.currentPage || '#';
   detailVisitorUrl.textContent = session.visitorInfo?.currentPage || '--';
@@ -528,6 +627,13 @@ btnTakeover.addEventListener('click', () => {
 btnHandoffBot.addEventListener('click', () => {
   if (currentSessionId) {
     socket.emit('agent:handoff_bot', { sessionId: currentSessionId });
+    const s = sessions.find(item => isSameId(item._id, currentSessionId));
+    if (s) {
+      s.status = 'bot';
+      s.assignedAgent = null;
+      updateChatHeaderAndDetails(s);
+      renderSessions();
+    }
   }
 });
 
@@ -588,6 +694,7 @@ chatMessageInput.addEventListener('input', () => {
 // --- KNOWLEDGE BASE LOGIC ---
 
 async function loadKB() {
+  if (!activeProjectId) return;
   try {
     const res = await fetch(`/api/kb?projectId=${activeProjectId}`, {
       headers: {
@@ -694,6 +801,7 @@ window.deleteKBDocument = async function(title) {
 // --- SETTINGS LOGIC ---
 
 async function loadSettings() {
+  if (!activeProjectId) return;
   try {
     const res = await fetch(`/api/settings/business-hours?projectId=${activeProjectId}`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('ld_token')}` }
@@ -717,8 +825,38 @@ async function loadSettings() {
     });
     if (brandingRes.ok) {
       const brandingData = await brandingRes.json();
-      if (settingsChatbotName) settingsChatbotName.value = brandingData.chatbotName || 'AI Chatbot';
+      if (settingsChatbotName) settingsChatbotName.value = brandingData.chatbotName || 'Nora AI';
       if (settingsTeamSubtitle) settingsTeamSubtitle.value = brandingData.teamSubtitle || 'Support Representative';
+      
+      const welcomeInput = document.getElementById('settings-welcome-message');
+      if (welcomeInput) welcomeInput.value = brandingData.welcomeMessage || 'Hi there! 👋 How can we help you today?';
+
+      const primaryColorInput = document.getElementById('settings-primary-color');
+      const primaryColorTextInput = document.getElementById('settings-primary-color-text');
+      if (primaryColorInput) {
+        primaryColorInput.value = brandingData.primaryColor || '#4f46e5';
+        if (primaryColorTextInput) primaryColorTextInput.value = brandingData.primaryColor || '#4f46e5';
+      }
+
+      const launcherIconSelect = document.getElementById('settings-launcher-icon');
+      if (launcherIconSelect) {
+        launcherIconSelect.value = brandingData.launcherIcon || 'chat';
+        updateCustomDropdownUI('dropdown-launcher-icon', 'label-launcher-icon', 'menu-launcher-icon', launcherIconSelect.value);
+      }
+
+      const positionSelect = document.getElementById('settings-widget-position');
+      if (positionSelect) {
+        positionSelect.value = brandingData.position || 'right';
+        updateCustomDropdownUI('dropdown-widget-position', 'label-widget-position', 'menu-widget-position', positionSelect.value);
+      }
+
+      const settingsQuickQuestions = document.getElementById('settings-quick-questions');
+      if (settingsQuickQuestions) {
+        const qList = Array.isArray(brandingData.suggestedQuestions) ? brandingData.suggestedQuestions : [];
+        settingsQuickQuestions.value = qList.join('\n');
+      }
+
+      updateLivePreview();
     }
   } catch (err) {
     console.error("Error loading settings:", err);
@@ -762,12 +900,34 @@ settingsHoursForm.addEventListener('submit', async (e) => {
   }
 });
 
-// Save Widget Branding Settings
+// Save Widget Branding & Theme Settings
 if (settingsBrandingForm) {
   settingsBrandingForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const chatbotName = settingsChatbotName.value.trim();
     const teamSubtitle = settingsTeamSubtitle.value.trim();
+    const welcomeMessage = document.getElementById('settings-welcome-message')?.value.trim() || 'Hi there! 👋 How can we help you today?';
+    const primaryColor = document.getElementById('settings-primary-color')?.value || '#4f46e5';
+    const launcherIcon = document.getElementById('settings-launcher-icon')?.value || 'chat';
+    const position = document.getElementById('settings-widget-position')?.value || 'right';
+
+    const settingsQuickQuestions = document.getElementById('settings-quick-questions');
+    const rawQuestions = settingsQuickQuestions ? settingsQuickQuestions.value : '';
+    const suggestedQuestions = rawQuestions
+      .split('\n')
+      .map(q => q.trim())
+      .filter(q => q.length > 0);
+
+    const branding = {
+      chatbotName,
+      teamSubtitle,
+      welcomeMessage,
+      primaryColor,
+      headerBg: primaryColor,
+      launcherIcon,
+      position,
+      suggestedQuestions
+    };
 
     try {
       const res = await fetch('/api/settings/branding', {
@@ -778,7 +938,7 @@ if (settingsBrandingForm) {
         },
         body: JSON.stringify({
           projectId: activeProjectId,
-          branding: { chatbotName, teamSubtitle }
+          branding
         })
       });
 
@@ -786,6 +946,7 @@ if (settingsBrandingForm) {
 
       brandingSuccessAlert.classList.remove('hidden');
       setTimeout(() => brandingSuccessAlert.classList.add('hidden'), 3000);
+      updateLivePreview();
     } catch (err) {
       alert("Error saving branding settings: " + err.message);
     }
@@ -842,9 +1003,274 @@ navItems.forEach(item => {
 
     // Refresh contents
     if (tab === 'dashboard') loadAnalytics();
+    if (tab === 'chats') renderSessionList();
+    if (tab === 'leads') loadLeads();
     if (tab === 'kb') loadKB();
     if (tab === 'settings') loadSettings();
   });
+});
+
+// --- LEADS DIRECTORY & FILTERING LOGIC ---
+let currentLeads = [];
+
+async function loadLeads() {
+  if (!activeProjectId) return;
+  initFlatpickrDatePickers();
+  const token = localStorage.getItem('ld_token');
+  const startDate = document.getElementById('leads-start-date')?.value || '';
+  const endDate = document.getElementById('leads-end-date')?.value || '';
+  const search = document.getElementById('leads-search-input')?.value || '';
+
+  try {
+    const query = new URLSearchParams({
+      projectId: activeProjectId,
+      ...(startDate && { startDate }),
+      ...(endDate && { endDate }),
+      ...(search && { search })
+    });
+
+    const res = await fetch(`/api/leads?${query.toString()}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (res.ok) {
+      currentLeads = await res.json();
+      renderLeadsTable(currentLeads);
+    }
+  } catch (err) {
+    console.error("Error loading leads:", err);
+  }
+}
+
+function renderLeadsTable(leads) {
+  const tbody = document.getElementById('leads-table-tbody');
+  const countEl = document.getElementById('leads-count-total');
+  if (countEl) countEl.textContent = leads.length;
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+  if (leads.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="empty-table" style="text-align: center; padding: 32px; color: var(--text-dark);">
+          No leads captured matching your selected filters.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  leads.forEach(lead => {
+    const tr = document.createElement('tr');
+    const info = lead.visitorInfo || {};
+    const name = info.name || 'Anonymous Visitor';
+    const email = info.email || 'N/A';
+    const phone = info.phone || 'N/A';
+    const dateStr = new Date(lead.createdAt).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    const pageUrl = info.currentPage || '#';
+    const pageTitle = info.title || pageUrl;
+    const location = info.city && info.country ? `${info.city}, ${info.country}` : (info.country || info.ip || 'Local Network');
+    const flag = getFlagEmoji(info.countryCode);
+
+    let statusBadge = `<span class="metric-badge trend-down">BOT</span>`;
+    if (lead.status === 'active') statusBadge = `<span class="metric-badge trend-up">ACTIVE</span>`;
+    else if (lead.status === 'closed') statusBadge = `<span class="metric-badge">CLOSED</span>`;
+
+    tr.innerHTML = `
+      <td><strong>${escapeHTML(name)}</strong></td>
+      <td><a href="mailto:${escapeHTML(email)}" style="color: var(--primary); text-decoration: none;">${escapeHTML(email)}</a></td>
+      <td>${escapeHTML(phone)}</td>
+      <td><span style="font-size: 0.82rem; color: var(--text-muted);">${dateStr}</span></td>
+      <td><a href="${escapeHTML(pageUrl)}" target="_blank" style="color: var(--text-main); font-size: 0.82rem;">${escapeHTML(pageTitle)}</a></td>
+      <td><span style="font-size: 0.82rem;">${flag} ${escapeHTML(location)}</span></td>
+      <td>${statusBadge}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function exportLeadsCSV() {
+  if (currentLeads.length === 0) {
+    alert("No lead data available to export.");
+    return;
+  }
+
+  const headers = ["Visitor Name", "Email Address", "Phone", "Captured Date", "Landing Page URL", "City", "Country", "IP Address", "Status"];
+  const rows = currentLeads.map(l => [
+    `"${(l.visitorInfo?.name || '').replace(/"/g, '""')}"`,
+    `"${(l.visitorInfo?.email || '').replace(/"/g, '""')}"`,
+    `"${(l.visitorInfo?.phone || '').replace(/"/g, '""')}"`,
+    `"${new Date(l.createdAt).toISOString()}"`,
+    `"${(l.visitorInfo?.currentPage || '').replace(/"/g, '""')}"`,
+    `"${(l.visitorInfo?.city || '').replace(/"/g, '""')}"`,
+    `"${(l.visitorInfo?.country || '').replace(/"/g, '""')}"`,
+    `"${(l.visitorInfo?.ip || '').replace(/"/g, '""')}"`,
+    `"${l.status}"`
+  ]);
+
+  const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `livedesk_leads_${activeProjectId}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function applyLeadDatePreset(preset) {
+  const startDateInput = document.getElementById('leads-start-date');
+  const endDateInput = document.getElementById('leads-end-date');
+  if (!startDateInput || !endDateInput) return;
+
+  const now = new Date();
+  let start = new Date();
+
+  if (preset === 'today') {
+    start.setHours(0, 0, 0, 0);
+  } else if (preset === 'yesterday') {
+    start.setDate(now.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
+    startDateInput.value = start.toISOString().split('T')[0];
+    endDateInput.value = end.toISOString().split('T')[0];
+    loadLeads();
+    return;
+  } else if (preset === '7days') {
+    start.setDate(now.getDate() - 7);
+  } else if (preset === '30days') {
+    start.setDate(now.getDate() - 30);
+  } else if (preset === 'all') {
+    startDateInput.value = '';
+    endDateInput.value = '';
+    loadLeads();
+    return;
+  }
+
+  startDateInput.value = start.toISOString().split('T')[0];
+  endDateInput.value = now.toISOString().split('T')[0];
+  loadLeads();
+}
+
+// Setup Leads Filter Event Listeners
+document.addEventListener('DOMContentLoaded', () => {
+  initFlatpickrDatePickers();
+
+  const startDateInput = document.getElementById('leads-start-date');
+  const endDateInput = document.getElementById('leads-end-date');
+  const searchInput = document.getElementById('leads-search-input');
+  const exportBtn = document.getElementById('btn-export-leads-csv');
+  const presetBtns = document.querySelectorAll('.preset-btn');
+
+  if (startDateInput) startDateInput.addEventListener('change', loadLeads);
+  if (endDateInput) endDateInput.addEventListener('change', loadLeads);
+  if (searchInput) {
+    let searchDebounce = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(loadLeads, 300);
+    });
+  }
+
+  if (exportBtn) exportBtn.addEventListener('click', exportLeadsCSV);
+
+  presetBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      presetBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyLeadDatePreset(btn.dataset.preset);
+    });
+  });
+});
+
+// --- LIVE WIDGET PREVIEW UPDATER ---
+function updateLivePreview() {
+  const primaryColor = document.getElementById('settings-primary-color')?.value || '#4f46e5';
+  const chatbotName = settingsChatbotName?.value || 'Nora AI';
+  const teamSubtitle = settingsTeamSubtitle?.value || 'Support Representative';
+  const welcomeMsg = document.getElementById('settings-welcome-message')?.value || 'Hi there! 👋 How can we help you today?';
+  const position = document.getElementById('settings-widget-position')?.value || 'right';
+  const iconChoice = document.getElementById('settings-launcher-icon')?.value || 'chat';
+
+  const previewHeader = document.getElementById('preview-widget-header');
+  const previewSendBtn = document.getElementById('preview-send-btn');
+  const previewLauncher = document.getElementById('preview-widget-launcher');
+  const previewWidgetWindow = document.getElementById('preview-widget-window');
+  const previewBotName = document.getElementById('preview-bot-name');
+  const previewBotSub = document.getElementById('preview-bot-sub');
+  const previewWelcomeBubble = document.getElementById('preview-welcome-bubble');
+  const previewLauncherIcon = document.getElementById('preview-launcher-icon');
+
+  if (previewHeader) previewHeader.style.backgroundColor = 'hsl(222, 28%, 9%)';
+  if (previewSendBtn) previewSendBtn.style.backgroundColor = primaryColor;
+  if (previewLauncher) {
+    previewLauncher.style.backgroundColor = primaryColor;
+    previewLauncher.style.boxShadow = `0 8px 24px ${primaryColor}66`;
+  }
+  if (previewBotName) previewBotName.textContent = chatbotName;
+  if (previewBotSub) {
+    previewBotSub.textContent = teamSubtitle;
+    previewBotSub.style.color = primaryColor;
+  }
+  if (previewWelcomeBubble) previewWelcomeBubble.textContent = welcomeMsg;
+
+  // Update visitor chat bubbles in Live Preview to match selected primary color
+  document.querySelectorAll('.preview-msg.visitor').forEach(msg => {
+    msg.style.backgroundColor = primaryColor;
+  });
+
+  const iconMap = { chat: '💬', bot: '🤖', sparkles: '✨', support: '🎧' };
+  if (previewLauncherIcon) previewLauncherIcon.textContent = iconMap[iconChoice] || '💬';
+
+  if (previewWidgetWindow && previewLauncher) {
+    if (position === 'left') {
+      previewWidgetWindow.classList.add('pos-left');
+      previewLauncher.classList.add('pos-left');
+    } else {
+      previewWidgetWindow.classList.remove('pos-left');
+      previewLauncher.classList.remove('pos-left');
+    }
+  }
+}
+
+// Live preview event listeners on theme controls
+document.addEventListener('DOMContentLoaded', () => {
+  const primaryColorInput = document.getElementById('settings-primary-color');
+  const primaryColorTextInput = document.getElementById('settings-primary-color-text');
+  const launcherIconSelect = document.getElementById('settings-launcher-icon');
+  const positionSelect = document.getElementById('settings-widget-position');
+  const welcomeInput = document.getElementById('settings-welcome-message');
+
+  if (primaryColorInput) {
+    primaryColorInput.addEventListener('input', (e) => {
+      if (primaryColorTextInput) primaryColorTextInput.value = e.target.value;
+      updateLivePreview();
+    });
+  }
+  if (primaryColorTextInput) {
+    primaryColorTextInput.addEventListener('input', (e) => {
+      if (primaryColorInput) primaryColorInput.value = e.target.value;
+      updateLivePreview();
+    });
+  }
+
+  document.querySelectorAll('.color-swatch').forEach(swatch => {
+    swatch.addEventListener('click', () => {
+      const color = swatch.dataset.color;
+      if (primaryColorInput) primaryColorInput.value = color;
+      if (primaryColorTextInput) primaryColorTextInput.value = color;
+      updateLivePreview();
+    });
+  });
+
+  if (launcherIconSelect) launcherIconSelect.addEventListener('change', updateLivePreview);
+  if (positionSelect) positionSelect.addEventListener('change', updateLivePreview);
+  if (welcomeInput) welcomeInput.addEventListener('input', updateLivePreview);
+  if (settingsChatbotName) settingsChatbotName.addEventListener('input', updateLivePreview);
+  if (settingsTeamSubtitle) settingsTeamSubtitle.addEventListener('input', updateLivePreview);
 });
 
 // Projects Selector Change
@@ -945,24 +1371,114 @@ async function loadProjects() {
   }
 }
 
-function renderProjectsDropdown(projects) {
-  if (!projectDropdownSelect) return;
-  projectDropdownSelect.innerHTML = '';
-  
-  projects.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = p.name;
-    if (p.id === activeProjectId) {
-      opt.selected = true;
+let flatpickrStart = null;
+let flatpickrEnd = null;
+
+function initFlatpickrDatePickers() {
+  if (typeof flatpickr !== 'undefined') {
+    const startDateInput = document.getElementById('leads-start-date');
+    const endDateInput = document.getElementById('leads-end-date');
+
+    if (startDateInput && !flatpickrStart) {
+      flatpickrStart = flatpickr(startDateInput, {
+        theme: "dark",
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "F j, Y",
+        onChange: function() {
+          loadLeads();
+        }
+      });
     }
-    projectDropdownSelect.appendChild(opt);
-  });
-  
-  // Load active project contents
+
+    if (endDateInput && !flatpickrEnd) {
+      flatpickrEnd = flatpickr(endDateInput, {
+        theme: "dark",
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "F j, Y",
+        onChange: function() {
+          loadLeads();
+        }
+      });
+    }
+  }
+}
+
+function selectProject(projId, projName) {
+  activeProjectId = projId;
+  localStorage.setItem('ld_active_project_id', activeProjectId);
+
+  const labelEl = document.getElementById('project-dropdown-label');
+  if (labelEl) labelEl.textContent = projName;
+
+  if (projectDropdownSelect) projectDropdownSelect.value = projId;
+
+  // Close dropdown menu
+  const dropdownMenu = document.getElementById('project-dropdown-menu');
+  const dropdownContainer = document.getElementById('project-custom-dropdown');
+  if (dropdownMenu) dropdownMenu.classList.add('hidden');
+  if (dropdownContainer) dropdownContainer.classList.remove('open');
+
+  if (socket) {
+    socket.emit('agent:select_project', { projectId: activeProjectId });
+  }
+
   loadAnalytics();
   loadKB();
   loadSettings();
+  loadLeads();
+  updateWidgetCodeSnippet();
+}
+
+function renderProjectsDropdown(projects) {
+  const container = document.getElementById('project-custom-dropdown');
+  const labelEl = document.getElementById('project-dropdown-label');
+  const itemsContainer = document.getElementById('project-dropdown-items');
+
+  if (projectDropdownSelect) {
+    projectDropdownSelect.innerHTML = '';
+  }
+  if (itemsContainer) {
+    itemsContainer.innerHTML = '';
+  }
+
+  const activeProj = projects.find(p => p.id === activeProjectId) || projects[0];
+  if (labelEl && activeProj) {
+    labelEl.textContent = activeProj.name;
+  }
+
+  projects.forEach(p => {
+    // Populate hidden select
+    if (projectDropdownSelect) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      if (p.id === activeProjectId) opt.selected = true;
+      projectDropdownSelect.appendChild(opt);
+    }
+
+    // Populate custom dropdown list
+    if (itemsContainer) {
+      const itemBtn = document.createElement('div');
+      itemBtn.className = `custom-dropdown-item ${p.id === activeProjectId ? 'active' : ''}`;
+      itemBtn.innerHTML = `
+        <i data-lucide="folder"></i>
+        <span>${escapeHTML(p.name)}</span>
+      `;
+      itemBtn.addEventListener('click', () => {
+        selectProject(p.id, p.name);
+      });
+      itemsContainer.appendChild(itemBtn);
+    }
+  });
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  loadAnalytics();
+  loadKB();
+  loadSettings();
+  loadLeads();
   updateWidgetCodeSnippet();
 }
 
@@ -1094,12 +1610,12 @@ function updateDashboardHistory() {
   if (!dashboardHistoryTbody) return;
   dashboardHistoryTbody.innerHTML = '';
 
-  const recentSessions = sessions.slice(0, 5);
+  const recentSessions = sessions.slice(0, 10);
 
   if (recentSessions.length === 0) {
     dashboardHistoryTbody.innerHTML = `
       <tr>
-        <td colspan="4" style="text-align: center; color: var(--text-dark); padding: 24px;">
+        <td colspan="5" style="text-align: center; color: var(--text-dark); padding: 24px;">
           No visitor sessions recorded for this project yet.
         </td>
       </tr>
@@ -1109,22 +1625,37 @@ function updateDashboardHistory() {
 
   recentSessions.forEach(s => {
     const tr = document.createElement('tr');
-    const name = s.visitorInfo?.name || `Visitor #${s.visitorId.substring(0, 5)}`;
+    const name = s.visitorInfo?.name || `Visitor #${s.visitorId.substring(0, 8)}`;
     const pageTitle = s.visitorInfo?.title || 'Viewing Site';
     const pageUrl = s.visitorInfo?.currentPage || '#';
     const lastActive = getRelativeTime(s.updatedAt);
     
+    const flag = getFlagEmoji(s.visitorInfo?.countryCode);
+    const country = s.visitorInfo?.country || s.visitorInfo?.location || 'Local Network';
+    const ip = s.visitorInfo?.ip || '127.0.0.1';
+    const device = parseUserAgent(s.visitorInfo?.userAgent);
+
     let statusClass = 'metric-badge trend-down';
     if (s.status === 'active') statusClass = 'metric-badge trend-up';
     else if (s.status === 'bot') statusClass = 'metric-badge';
 
-    const agentName = s.assignedAgent ? s.assignedAgent.username : 'AI Chatbot';
+    const agentName = s.assignedAgent ? (s.assignedAgent.username || 'Agent') : 'AI Chatbot';
 
     tr.innerHTML = `
-      <td><strong>${escapeHTML(name)}</strong></td>
-      <td><a href="${escapeHTML(pageUrl)}" target="_blank">${escapeHTML(pageTitle)}</a></td>
+      <td><strong>${flag} ${escapeHTML(name)}</strong></td>
+      <td>
+        <span style="font-weight: 500;">${escapeHTML(country)}</span><br>
+        <small style="color: var(--text-dark); font-family: monospace;">${escapeHTML(ip)}</small>
+      </td>
+      <td>
+        <span>${device.osBadge} ${escapeHTML(device.os)}</span> &bull; 
+        <span>${device.browserBadge} ${escapeHTML(device.browser)}</span>
+      </td>
       <td><span class="${statusClass}">${s.status.toUpperCase()}</span></td>
-      <td>${lastActive} (Assigned: <strong>${escapeHTML(agentName)}</strong>)</td>
+      <td>
+        <span>${lastActive}</span><br>
+        <small style="color: var(--text-dark);">Assigned: <strong>${escapeHTML(agentName)}</strong></small>
+      </td>
     `;
     dashboardHistoryTbody.appendChild(tr);
   });
@@ -1282,7 +1813,8 @@ lucide.createIcons();
 function updateWidgetCodeSnippet() {
   if (!settingsWidgetCodeSnippet) return;
   const origin = window.location.origin;
-  const code = `<script id="livedesk-widget-script" src="${origin}/widget/widget.js?project=${activeProjectId}"></script>`;
+  const pid = activeProjectId || 'YOUR_PROJECT_ID';
+  const code = `<script id="livedesk-widget-script" src="${origin}/widget/widget.js?project=${pid}"></script>`;
   settingsWidgetCodeSnippet.textContent = code;
 }
 
@@ -1298,3 +1830,117 @@ if (btnCopyWidgetCode) {
     });
   });
 }
+
+// Universal Custom Dropdown Component System
+function setupCustomSelectDropdown(containerId, triggerId, menuId, labelId, selectId, onChangeCallback) {
+  const container = document.getElementById(containerId);
+  const trigger = document.getElementById(triggerId);
+  const menu = document.getElementById(menuId);
+  const label = document.getElementById(labelId);
+  const select = document.getElementById(selectId);
+
+  if (!container || !trigger || !menu || !select) return;
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.custom-dropdown-menu').forEach(m => {
+      if (m !== menu) m.classList.add('hidden');
+    });
+    document.querySelectorAll('.custom-dropdown-container').forEach(c => {
+      if (c !== container) c.classList.remove('open');
+    });
+
+    const isHidden = menu.classList.contains('hidden');
+    if (isHidden) {
+      menu.classList.remove('hidden');
+      container.classList.add('open');
+    } else {
+      menu.classList.add('hidden');
+      container.classList.remove('open');
+    }
+  });
+
+  menu.querySelectorAll('.custom-dropdown-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const val = item.dataset.value;
+      const text = item.textContent.trim();
+
+      select.value = val;
+      if (label) label.textContent = text;
+
+      menu.querySelectorAll('.custom-dropdown-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+
+      menu.classList.add('hidden');
+      container.classList.remove('open');
+
+      select.dispatchEvent(new Event('change'));
+      if (onChangeCallback) onChangeCallback(val);
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!container.contains(e.target)) {
+      menu.classList.add('hidden');
+      container.classList.remove('open');
+    }
+  });
+}
+
+function updateCustomDropdownUI(containerId, labelId, menuId, val) {
+  const menu = document.getElementById(menuId);
+  const label = document.getElementById(labelId);
+  if (!menu) return;
+
+  menu.querySelectorAll('.custom-dropdown-item').forEach(item => {
+    if (item.dataset.value === val) {
+      item.classList.add('active');
+      if (label) label.textContent = item.textContent.trim();
+    } else {
+      item.classList.remove('active');
+    }
+  });
+}
+
+// Custom Project Selector Dropdown Toggle & Outside Click Listener
+document.addEventListener('DOMContentLoaded', () => {
+  const triggerBtn = document.getElementById('project-dropdown-trigger');
+  const dropdownMenu = document.getElementById('project-dropdown-menu');
+  const dropdownContainer = document.getElementById('project-custom-dropdown');
+  const btnCreateProjectDropdown = document.getElementById('btn-create-project-dropdown');
+
+  if (triggerBtn && dropdownMenu) {
+    triggerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = dropdownMenu.classList.contains('hidden');
+      if (isHidden) {
+        dropdownMenu.classList.remove('hidden');
+        if (dropdownContainer) dropdownContainer.classList.add('open');
+      } else {
+        dropdownMenu.classList.add('hidden');
+        if (dropdownContainer) dropdownContainer.classList.remove('open');
+      }
+    });
+  }
+
+  if (btnCreateProjectDropdown) {
+    btnCreateProjectDropdown.addEventListener('click', () => {
+      if (btnCreateProjectModal) btnCreateProjectModal.click();
+      if (dropdownMenu) dropdownMenu.classList.add('hidden');
+      if (dropdownContainer) dropdownContainer.classList.remove('open');
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    if (dropdownContainer && !dropdownContainer.contains(e.target)) {
+      if (dropdownMenu) dropdownMenu.classList.add('hidden');
+      dropdownContainer.classList.remove('open');
+    }
+  });
+
+  // Setup custom dropdowns for theme and settings forms
+  setupCustomSelectDropdown('dropdown-launcher-icon', 'trigger-launcher-icon', 'menu-launcher-icon', 'label-launcher-icon', 'settings-launcher-icon', () => updateLivePreview());
+  setupCustomSelectDropdown('dropdown-widget-position', 'trigger-widget-position', 'menu-widget-position', 'label-widget-position', 'settings-widget-position', () => updateLivePreview());
+  setupCustomSelectDropdown('dropdown-timezone', 'trigger-timezone', 'menu-timezone', 'label-timezone', 'settings-timezone');
+  setupCustomSelectDropdown('dropdown-reg-role', 'trigger-reg-role', 'menu-reg-role', 'label-reg-role', 'reg-role');
+});

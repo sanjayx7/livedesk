@@ -1,7 +1,7 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: [path.join(__dirname, '../.env'), path.join(__dirname, '.env')] });
 const express = require('express');
 const http = require('http');
-const path = require('path');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 
@@ -208,7 +208,20 @@ app.get('/api/settings/business-hours', protect, async (req, res) => {
 app.get('/api/settings/branding', protect, async (req, res) => {
   const { projectId } = req.query;
   const pid = projectId || 'default';
-  const defaultBranding = { chatbotName: 'AI Chatbot', teamSubtitle: 'Support Representative' };
+  const defaultBranding = {
+    chatbotName: 'Nora AI',
+    teamSubtitle: 'Support Representative',
+    welcomeMessage: 'Hi there! 👋 How can we help you today?',
+    primaryColor: '#4f46e5',
+    headerBg: '#1e1b4b',
+    position: 'right',
+    launcherIcon: 'chat',
+    suggestedQuestions: [
+      "What services do you offer?",
+      "How does pricing work?",
+      "How can I talk to a human agent?"
+    ]
+  };
   try {
     let doc = await Setting.findOne({ key: 'widget_branding', projectId: pid });
     if (!doc) {
@@ -221,6 +234,8 @@ app.get('/api/settings/branding', protect, async (req, res) => {
       } catch (err) {
         doc = await Setting.findOne({ key: 'widget_branding', projectId: pid });
       }
+    } else {
+      doc.value = { ...defaultBranding, ...doc.value };
     }
     res.json(doc ? doc.value : defaultBranding);
   } catch (error) {
@@ -245,6 +260,55 @@ app.post('/api/settings/branding', protect, async (req, res) => {
   }
 });
 
+// Leads: Get visitor lead capture list filtered by date range and search
+app.get('/api/leads', protect, async (req, res) => {
+  const { projectId, startDate, endDate, search } = req.query;
+  const pid = projectId || 'default';
+
+  try {
+    const query = {
+      projectId: pid,
+      $or: [
+        { 'visitorInfo.name': { $exists: true, $ne: '' } },
+        { 'visitorInfo.email': { $exists: true, $ne: '' } },
+        { 'visitorInfo.phone': { $exists: true, $ne: '' } },
+      ]
+    };
+
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
+
+    if (search && search.trim() !== '') {
+      const searchRegex = new RegExp(search.trim(), 'i');
+      query.$and = query.$and || [];
+      query.$and.push({
+        $or: [
+          { 'visitorInfo.name': searchRegex },
+          { 'visitorInfo.email': searchRegex },
+          { 'visitorInfo.phone': searchRegex },
+          { 'visitorInfo.currentPage': searchRegex },
+          { 'visitorInfo.city': searchRegex },
+          { 'visitorInfo.country': searchRegex }
+        ]
+      });
+    }
+
+    const leads = await Session.find(query).sort({ createdAt: -1 });
+    res.json(leads);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Settings: Update business hours configuration
 app.post('/api/settings/business-hours', protect, async (req, res) => {
   const { projectId, hours } = req.body;
@@ -264,7 +328,7 @@ app.get('/api/projects', protect, async (req, res) => {
     if (!doc) {
       doc = await Setting.create({
         key: 'projects_list',
-        value: [{ id: 'default', name: 'Default Project' }]
+        value: []
       });
     }
     res.json(doc.value);
@@ -285,12 +349,12 @@ app.post('/api/projects', protect, async (req, res) => {
     if (!doc) {
       doc = new Setting({
         key: 'projects_list',
-        value: [{ id: 'default', name: 'Default Project' }]
+        value: []
       });
     }
     
     const newId = 'project_' + Math.random().toString(36).substring(2, 9);
-    const updatedList = [...doc.value, { id: newId, name: name.trim() }];
+    const updatedList = [...(doc.value || []), { id: newId, name: name.trim() }];
     doc.value = updatedList;
     doc.markModified('value');
     await doc.save();

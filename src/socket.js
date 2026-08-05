@@ -9,6 +9,67 @@ const { getBusinessHours, isWithinBusinessHours } = require('./services/business
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-livedesk-token-key-2026';
 
+// Helper: GeoIP resolution for visitor IP and country
+async function resolveGeoIP(rawIp) {
+  let ip = (rawIp || '').split(',')[0].trim();
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.replace('::ffff:', '');
+  }
+
+  if (!ip || ip === '::1' || ip === '127.0.0.1' || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+    try {
+      const res = await fetch('http://ip-api.com/json/', { timeout: 3000 });
+      if (res.ok) {
+        const geo = await res.json();
+        if (geo && geo.status === 'success') {
+          return {
+            ip: geo.query || ip || '127.0.0.1',
+            country: geo.country || 'Localhost',
+            countryCode: geo.countryCode || 'IN',
+            city: geo.city || '',
+            location: `${geo.city ? geo.city + ', ' : ''}${geo.country || 'Local Network'}`
+          };
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return {
+      ip: ip || '127.0.0.1',
+      country: 'Local Network',
+      countryCode: 'IN',
+      city: 'Local',
+      location: 'Local Network'
+    };
+  }
+
+  try {
+    const res = await fetch(`http://ip-api.com/json/${ip}`, { timeout: 3000 });
+    if (res.ok) {
+      const geo = await res.json();
+      if (geo && geo.status === 'success') {
+        return {
+          ip,
+          country: geo.country || '',
+          countryCode: geo.countryCode || '',
+          city: geo.city || '',
+          location: `${geo.city ? geo.city + ', ' : ''}${geo.country || ip}`
+        };
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return {
+    ip,
+    country: '',
+    countryCode: '',
+    city: '',
+    location: ip
+  };
+}
+
 function initSocket(server) {
   const io = socketIO(server, {
     cors: {
@@ -88,6 +149,9 @@ function initSocket(server) {
       currentProjectId = projectId || 'default';
 
       try {
+        const rawIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.headers['x-real-ip'] || socket.handshake.address;
+        const geoInfo = await resolveGeoIP(rawIp);
+
         // Find or create session
         let session = await Session.findOne({ visitorId });
         if (!session) {
@@ -96,12 +160,15 @@ function initSocket(server) {
             projectId: currentProjectId,
             status: 'bot',
             visitorInfo: {
-              ip: socket.handshake.address,
+              ip: geoInfo.ip,
+              country: geoInfo.country,
+              countryCode: geoInfo.countryCode,
+              city: geoInfo.city,
+              location: geoInfo.location,
               userAgent,
               currentPage: pageUrl,
               title: pageTitle,
               referrer,
-              location: '',
               name: name || '',
               email: email || '',
               phone: phone || ''
@@ -110,6 +177,11 @@ function initSocket(server) {
         } else {
           // Update details
           session.projectId = currentProjectId;
+          session.visitorInfo.ip = geoInfo.ip || session.visitorInfo.ip;
+          if (geoInfo.country) session.visitorInfo.country = geoInfo.country;
+          if (geoInfo.countryCode) session.visitorInfo.countryCode = geoInfo.countryCode;
+          if (geoInfo.city) session.visitorInfo.city = geoInfo.city;
+          if (geoInfo.location) session.visitorInfo.location = geoInfo.location;
           session.visitorInfo.currentPage = pageUrl;
           session.visitorInfo.title = pageTitle;
           session.visitorInfo.userAgent = userAgent;
@@ -161,10 +233,8 @@ function initSocket(server) {
         // Broadcast to session room (so user and assigned agent see it)
         io.to(`session_${targetSessionId}`).emit('message:new', userMsg);
 
-        // Increment unread count (reset when agent joins)
-        if (session.status !== 'active') {
-          session.unreadCount = (session.unreadCount || 0) + 1;
-        }
+        // Increment unread count for agent dashboard notifications
+        session.unreadCount = (session.unreadCount || 0) + 1;
 
         // Fetch real-time open/online status
         const bhSettings = await getBusinessHours(session.projectId || 'default');
@@ -173,40 +243,119 @@ function initSocket(server) {
         const hasOnlineAgents = onlineAgentsCount > 0;
         const isSystemOnline = isBusinessOpen && hasOnlineAgents;
 
-        // Auto routing / status updates
-        if (isSystemOnline) {
-          // Normal mode (Open & Agents online): ensure status is active (human support)
-          if (session.status !== 'active') {
-            session.status = 'active';
-            await session.save();
-            
-            const statusChangePayload = { status: 'active', assignedAgent: session.assignedAgent };
-            io.to(`session_${targetSessionId}`).emit('session:status_changed', statusChangePayload);
-            io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', {
-              sessionId: session._id,
-              ...statusChangePayload
-            });
-          }
-
-          // Trigger dashboard audio alert alarm for active human agent takeover
-          io.to('agents_' + (session.projectId || 'default')).emit('notification:new_message', {
-            sessionId: session._id,
-            visitorId: session.visitorId,
-            text: userMsg.text
-          });
-        } else {
-          // Auto mode (Offline/Closed): ensure status is bot (AI support)
+        // Routing logic:
+        // If session is explicitly set to 'bot', preserve 'bot' mode so AI chatbot handles response.
+        // If system is offline, force session to 'bot' mode unless closed.
+        // If system is online and session was not previously bot, set to 'active'.
+        if (!isSystemOnline && session.status !== 'closed') {
           if (session.status !== 'bot') {
             session.status = 'bot';
             session.assignedAgent = null;
             await session.save();
-            
+
             const statusChangePayload = { status: 'bot', assignedAgent: null };
             io.to(`session_${targetSessionId}`).emit('session:status_changed', statusChangePayload);
             io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', {
               sessionId: session._id,
               ...statusChangePayload
             });
+          }
+        } else if (session.status === 'active') {
+          // Trigger dashboard audio alert alarm for human agent when in active mode
+          io.to('agents_' + (session.projectId || 'default')).emit('notification:new_message', {
+            sessionId: session._id,
+            visitorId: session.visitorId,
+            text: userMsg.text
+          });
+        }
+
+        // Retrieve recent messages for multi-turn history context
+        const recentMessages = await Message.find({ sessionId: session._id }).sort({ timestamp: -1 }).limit(6);
+        const historyText = recentMessages.slice().reverse().map(m => `${m.sender.toUpperCase()}: ${m.text}`).join('\n');
+
+        // Check if visitor is asking to connect to salesman/human agent OR confirming "yes" to a bot offer
+        const lowerText = text.trim().toLowerCase();
+        const isDirectConnectRequest = /\b(connect|talk|speak|chat|call|transfer)\b.*\b(sales|salesman|agent|human|rep|representative|team|support)\b/i.test(lowerText)
+          || /\b(salesman|sales representative|human agent|live agent)\b/i.test(lowerText);
+
+        const lastBotMessage = recentMessages.find(m => m.sender === 'bot');
+        const botOfferedConnection = lastBotMessage && (
+          /connect/i.test(lastBotMessage.text) || 
+          /agent/i.test(lastBotMessage.text) || 
+          /sales/i.test(lastBotMessage.text) || 
+          /representative/i.test(lastBotMessage.text)
+        );
+        const isAffirmativeResponse = /^(yes|yeah|yep|sure|ok|okay|please|connect|connect me|yup|do it|pls)\b/i.test(lowerText);
+
+        const wantsToConnect = isDirectConnectRequest || (botOfferedConnection && isAffirmativeResponse);
+
+        // Routing & Intent Handling
+        if (session.status === 'bot' && wantsToConnect) {
+          if (isSystemOnline) {
+            // System is ONLINE: Hand off session to active human agent, trigger notifications & audio alarm
+            session.status = 'active';
+            await session.save();
+
+            const statusPayload = { status: 'active', assignedAgent: session.assignedAgent };
+            io.to(`session_${targetSessionId}`).emit('session:status_changed', statusPayload);
+            io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', {
+              sessionId: session._id,
+              ...statusPayload
+            });
+
+            // Trigger dashboard audio alert alarm for human agent
+            io.to('agents_' + (session.projectId || 'default')).emit('notification:new_message', {
+              sessionId: session._id,
+              visitorId: session.visitorId,
+              text: userMsg.text
+            });
+
+            // Bot reply confirming connection to salesman/agent
+            const botMsg = await Message.create({
+              sessionId: session._id,
+              sender: 'bot',
+              text: "Certainly! I am connecting you to an available sales representative right away. Please stay on the line..."
+            });
+            io.to(`session_${targetSessionId}`).emit('message:new', botMsg);
+
+            broadcastSessionList(session.projectId);
+            return;
+            // Fetch project name and branding options for prompt personalization
+            let projectName = '';
+            try {
+              const projectsDoc = await Setting.findOne({ key: 'projects_list' });
+              if (projectsDoc && Array.isArray(projectsDoc.value)) {
+                const proj = projectsDoc.value.find(p => p.id === (session.projectId || 'default'));
+                if (proj) projectName = proj.name;
+              }
+            } catch (e) {}
+
+            const brandingDoc = await Setting.findOne({ key: 'widget_branding', projectId: session.projectId || 'default' });
+            const branding = brandingDoc ? brandingDoc.value : {};
+            const ragOptions = {
+              projectName: projectName || branding.chatbotName || 'our company',
+              chatbotName: branding.chatbotName || 'AI Assistant'
+            };
+
+            // System is OFFLINE: Keep in bot mode, do NOT trigger alarms, present offline contact/lead capture
+            io.to(`session_${targetSessionId}`).emit('bot:typing', true);
+            const relevantChunks = await queryKnowledgeBase(text, session.projectId || 'default', 3);
+            const botResponseText = await generateAnswer(text, relevantChunks, historyText, false, ragOptions);
+
+            setTimeout(async () => {
+              const botMsg = await Message.create({
+                sessionId: session._id,
+                sender: 'bot',
+                text: botResponseText
+              });
+              io.to(`session_${targetSessionId}`).emit('bot:typing', false);
+              io.to(`session_${targetSessionId}`).emit('message:new', botMsg);
+
+              session.updatedAt = new Date();
+              await session.save();
+              broadcastSessionList(session.projectId);
+            }, 800);
+            return;
           }
         }
 
@@ -215,14 +364,31 @@ function initSocket(server) {
         await session.save();
         broadcastSessionList(session.projectId);
 
-        // If session status is bot, trigger RAG chatbot response
+        // Regular bot response if session status is bot
         if (session.status === 'bot') {
           // Send typing indicator for bot
           io.to(`session_${targetSessionId}`).emit('bot:typing', true);
 
-          // Perform knowledge retrieval and generation
+          // Fetch project name and branding options for prompt personalization
+          let projectName = '';
+          try {
+            const projectsDoc = await Setting.findOne({ key: 'projects_list' });
+            if (projectsDoc && Array.isArray(projectsDoc.value)) {
+              const proj = projectsDoc.value.find(p => p.id === (session.projectId || 'default'));
+              if (proj) projectName = proj.name;
+            }
+          } catch (e) {}
+
+          const brandingDoc = await Setting.findOne({ key: 'widget_branding', projectId: session.projectId || 'default' });
+          const branding = brandingDoc ? brandingDoc.value : {};
+          const ragOptions = {
+            projectName: projectName || branding.chatbotName || 'our company',
+            chatbotName: branding.chatbotName || 'AI Assistant'
+          };
+
+          // Perform knowledge retrieval and generation with history
           const relevantChunks = await queryKnowledgeBase(text, session.projectId || 'default', 3);
-          const botResponseText = await generateAnswer(text, relevantChunks);
+          const botResponseText = await generateAnswer(text, relevantChunks, historyText, isSystemOnline, ragOptions);
 
           // Simulate slight typing delay
           setTimeout(async () => {
@@ -238,7 +404,7 @@ function initSocket(server) {
             session.updatedAt = new Date();
             await session.save();
             broadcastSessionList(session.projectId);
-          }, 1000);
+          }, 800);
         }
       } catch (err) {
         console.error("Error in visitor:message:", err);
@@ -311,6 +477,25 @@ function initSocket(server) {
       console.log(`Agent ${currentAgent.username} joined project room: agents_${currentProjectId}`);
     });
 
+    // Agent views a chat session (without altering status)
+    socket.on('agent:view_chat', async (data) => {
+      if (!currentAgent) return;
+      const { sessionId } = data;
+
+      try {
+        const session = await Session.findById(sessionId);
+        if (session) {
+          socket.join(`session_${sessionId}`);
+          console.log(`Agent ${currentAgent.username} viewing session ${sessionId}`);
+
+          const messages = await Message.find({ sessionId: session._id }).sort({ timestamp: 1 });
+          socket.emit('agent:chat_history', { sessionId, messages });
+        }
+      } catch (err) {
+        console.error("Error in agent:view_chat:", err);
+      }
+    });
+
     // Agent joins a chat (takeover)
     socket.on('agent:join_chat', async (data) => {
       if (!currentAgent) return;
@@ -327,11 +512,15 @@ function initSocket(server) {
           socket.join(`session_${sessionId}`);
           console.log(`Agent ${currentAgent.username} took over session ${sessionId}`);
 
-          // Notify visitor that agent joined
-          io.to(`session_${sessionId}`).emit('session:status_changed', {
+          const statusPayload = {
+            sessionId: session._id.toString(),
             status: 'active',
-            assignedAgent: { username: currentAgent.username }
-          });
+            assignedAgent: { username: currentAgent.username, _id: currentAgent._id }
+          };
+
+          // Notify visitor and agents that agent joined
+          io.to(`session_${sessionId}`).emit('session:status_changed', statusPayload);
+          io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', statusPayload);
 
           // Fetch full messages of this session for agent
           const messages = await Message.find({ sessionId: session._id }).sort({ timestamp: 1 });
@@ -397,10 +586,14 @@ function initSocket(server) {
           session.assignedAgent = null;
           await session.save();
 
-          io.to(`session_${sessionId}`).emit('session:status_changed', {
+          const statusPayload = {
+            sessionId: session._id.toString(),
             status: 'bot',
             assignedAgent: null
-          });
+          };
+
+          io.to(`session_${sessionId}`).emit('session:status_changed', statusPayload);
+          io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', statusPayload);
 
           broadcastSessionList(session.projectId);
         }
@@ -420,10 +613,14 @@ function initSocket(server) {
           session.status = 'closed';
           await session.save();
 
-          io.to(`session_${sessionId}`).emit('session:status_changed', {
+          const statusPayload = {
+            sessionId: session._id.toString(),
             status: 'closed',
             assignedAgent: null
-          });
+          };
+
+          io.to(`session_${sessionId}`).emit('session:status_changed', statusPayload);
+          io.to(`agents_${session.projectId || 'default'}`).emit('session:status_changed', statusPayload);
 
           broadcastSessionList(session.projectId);
         }

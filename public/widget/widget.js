@@ -47,9 +47,11 @@
     widgetWrapper.innerHTML = `
       <!-- Launcher Bubble -->
       <button class="ld-launcher" id="ld-launcher-btn" aria-label="Open Chat">
-        <svg class="ld-icon-chat" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-        </svg>
+        <div class="ld-icon-chat" id="ld-launcher-icon-box">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </div>
         <svg class="ld-icon-close ld-hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
@@ -113,12 +115,14 @@
 
         <!-- Composer area -->
         <form class="ld-composer ld-chat-content-el ld-hidden" id="ld-composer-form">
-          <input type="text" id="ld-message-input" placeholder="Ask a question..." autocomplete="off" required>
-          <button type="submit" class="ld-btn-send" aria-label="Send message">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
+          <div class="ld-composer-bar">
+            <input type="text" id="ld-message-input" placeholder="Ask a question..." autocomplete="off" required>
+            <button type="submit" class="ld-btn-send" id="ld-btn-send-msg" aria-label="Send message">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z"/>
+              </svg>
+            </button>
+          </div>
         </form>
       </div>
     `;
@@ -148,25 +152,50 @@
     const leadBtnSkip = shadow.getElementById('ld-lead-btn-skip');
     const suggestedQuestionsBox = shadow.getElementById('ld-suggested-questions-box');
 
-    // Apply cached branding immediately so name is correct before socket connects
-    if (headerTitle) headerTitle.textContent = brandingConfig.chatbotName || 'AI Chatbot';
-    if (headerStatus) {
-      headerStatus.textContent = 'Knowledge Assistant';
-      headerStatus.style.color = '#3b82f6';
+    function applyDynamicTheme(config) {
+      if (!config) return;
+      const primaryColor = config.primaryColor || '#4f46e5';
+      const position = config.position || 'right';
+      const iconType = config.launcherIcon || 'chat';
+      const welcome = config.welcomeMessage || 'Hi there! 👋 How can we help you today?';
+
+      widgetWrapper.style.setProperty('--ld-primary', primaryColor);
+
+      if (position === 'left') {
+        widgetWrapper.classList.add('ld-pos-left');
+      } else {
+        widgetWrapper.classList.remove('ld-pos-left');
+      }
+
+      const iconMap = {
+        chat: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>`,
+        bot: `<span style="font-size:1.4rem;">🤖</span>`,
+        sparkles: `<span style="font-size:1.4rem;">✨</span>`,
+        support: `<span style="font-size:1.4rem;">🎧</span>`
+      };
+      if (iconChat) {
+        iconChat.innerHTML = iconMap[iconType] || iconMap.chat;
+      }
+
+      const firstBotMsg = shadow.querySelector('.ld-message.ld-bot .ld-bubble');
+      if (firstBotMsg && welcome) {
+        firstBotMsg.textContent = welcome;
+      }
     }
 
-    const defaultQuestions = {
-      'default': [
-        "What is LiveDesk?",
-        "How do I set up the chat widget?",
-        "How can I talk to a human agent?"
-      ],
-      'project_salesroute': [
-        "What is SalesRoute AI?",
-        "Tell me about the features",
-        "How can I request a demo?"
-      ]
-    };
+    // Apply cached branding immediately so theme & name are correct before socket connects
+    if (headerTitle) headerTitle.textContent = brandingConfig.chatbotName || 'Nora AI';
+    if (headerStatus) {
+      headerStatus.textContent = brandingConfig.teamSubtitle || 'Support Representative';
+      headerStatus.style.color = '#3b82f6';
+    }
+    applyDynamicTheme(brandingConfig);
+
+    const defaultFallbackQuestions = [
+      "What services do you offer?",
+      "How does pricing work?",
+      "How can I talk to a human agent?"
+    ];
 
     function renderSuggestedQuestions() {
       if (!suggestedQuestionsBox) return;
@@ -186,7 +215,10 @@
 
       suggestedQuestionsBox.classList.remove('ld-hidden');
       
-      const list = defaultQuestions[projectId] || defaultQuestions['default'];
+      const list = (brandingConfig && Array.isArray(brandingConfig.suggestedQuestions) && brandingConfig.suggestedQuestions.length > 0)
+        ? brandingConfig.suggestedQuestions
+        : defaultFallbackQuestions;
+
       list.forEach(q => {
         const btn = document.createElement('button');
         btn.className = 'ld-suggested-btn';
@@ -317,6 +349,7 @@
         brandingConfig = data.branding;
         // Cache branding so it loads instantly next time
         localStorage.setItem(`livedesk_branding_${projectId}`, JSON.stringify(data.branding));
+        applyDynamicTheme(data.branding);
       }
       updateHeader(session);
       renderSuggestedQuestions();
@@ -331,7 +364,7 @@
     });
 
     socket.on('session:status_changed', (data) => {
-      if (session) {
+      if (session && (!data.sessionId || String(data.sessionId) === String(session._id))) {
         session.status = data.status;
         session.assignedAgent = data.assignedAgent;
         updateHeader(session);
@@ -340,16 +373,10 @@
     });
 
     socket.on('message:new', (msg) => {
-      appendMessage(msg);
-      renderSuggestedQuestions();
-      scrollToBottom();
-    });
-
-    socket.on('session:status_changed', (data) => {
-      if (session) {
-        session.status = data.status;
-        session.assignedAgent = data.assignedAgent;
-        updateHeader(session);
+      if (session && String(msg.sessionId) === String(session._id)) {
+        appendMessage(msg);
+        renderSuggestedQuestions();
+        scrollToBottom();
       }
     });
 
@@ -418,8 +445,8 @@
         headerAvatar.textContent = '🤖';
         headerAvatar.style.backgroundColor = '#2c3347';
         headerTitle.textContent = brandingConfig.chatbotName || 'AI Chatbot';
-        headerStatus.textContent = 'Knowledge Assistant';
-        headerStatus.style.color = '#3b82f6';
+        headerStatus.textContent = brandingConfig.teamSubtitle || 'Online Support';
+        headerStatus.style.color = '#10b981';
       }
     }
 

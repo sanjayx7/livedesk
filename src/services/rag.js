@@ -18,37 +18,46 @@ async function getEmbedding(text) {
   return Array.from(output.data);
 }
 
-// Simple text chunker
-function chunkText(text, maxChunkSize = 500, overlap = 100) {
-  const paragraphs = text.split(/\n+/);
+// Helper to strip markdown symbols (like **, #, etc.) from AI outputs
+function stripMarkdownFormatting(text) {
+  if (!text) return '';
+  return text
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[\r\n]{3,}/g, '\n\n')
+    .trim();
+}
+
+// Clean and smart text chunker
+function chunkText(text, maxChunkSize = 400) {
+  // First split by explicit markdown section dividers (---) or multiple newlines
+  const sections = text.split(/(?:\n\s*---\s*\n|\n\s*\n\s*\n)/);
   const chunks = [];
-  let currentChunk = '';
 
-  for (let paragraph of paragraphs) {
-    paragraph = paragraph.trim();
-    if (!paragraph) continue;
+  for (let section of sections) {
+    section = section.trim();
+    if (!section) continue;
 
-    if ((currentChunk + '\n' + paragraph).length <= maxChunkSize) {
-      currentChunk = currentChunk ? currentChunk + '\n' + paragraph : paragraph;
+    // If section is under max size, add directly
+    if (section.length <= maxChunkSize) {
+      chunks.push(section);
     } else {
-      if (currentChunk) {
-        chunks.push(currentChunk);
-      }
-      if (paragraph.length > maxChunkSize) {
-        let remaining = paragraph;
-        while (remaining.length > 0) {
-          chunks.push(remaining.substring(0, maxChunkSize));
-          remaining = remaining.substring(maxChunkSize - overlap);
-          if (remaining.length <= overlap) break;
+      // Split large sections by paragraphs
+      const paragraphs = section.split(/\n+/);
+      let currentChunk = '';
+      for (let p of paragraphs) {
+        p = p.trim();
+        if (!p) continue;
+        if ((currentChunk + '\n' + p).length <= maxChunkSize) {
+          currentChunk = currentChunk ? currentChunk + '\n' + p : p;
+        } else {
+          if (currentChunk) chunks.push(currentChunk);
+          currentChunk = p;
         }
-        currentChunk = '';
-      } else {
-        currentChunk = paragraph;
       }
+      if (currentChunk) chunks.push(currentChunk);
     }
-  }
-  if (currentChunk) {
-    chunks.push(currentChunk);
   }
   return chunks;
 }
@@ -100,20 +109,73 @@ async function queryKnowledgeBase(queryText, projectId = 'default', limit = 3) {
   return results.slice(0, limit);
 }
 
-// Generate the final answer using retrieved context
-async function generateAnswer(queryText, contextChunks) {
-  // Check for simple greetings and respond naturally
+// Generate the final answer using retrieved context, history, and online status
+async function generateAnswer(queryText, contextChunks, historyText = '', isSystemOnline = true, options = {}) {
   const normalizedQuery = queryText.trim().toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "");
+  
+  // Greetings handling
   const greetings = ['hi', 'hello', 'hey', 'greetings', 'hola', 'good morning', 'good afternoon', 'good evening', 'yo', 'sup', 'hello there', 'hi there'];
   if (greetings.includes(normalizedQuery)) {
-    return "Hello! How can I help you today? Feel free to ask any questions about our products, services, or features.";
+    return "Hello! 👋 Welcome! How can I help you today?";
   }
 
+  // Thanks & farewell handling
+  const gratitude = ['thanks', 'thank you', 'thx', 'thank u', 'great', 'awesome', 'bye', 'goodbye'];
+  if (gratitude.includes(normalizedQuery)) {
+    return "You're very welcome! Let me know if you need anything else.";
+  }
+
+  const companyName = options.projectName || options.chatbotName || 'our company';
   const contextText = contextChunks.map(c => `[Source: ${c.title}]\n${c.content}`).join('\n\n');
+  
+  const isSalesOrDemoQuery = /\b(demo|sales|pricing|consult|consultation|package|buy|purchase|quote|cost|contact)\b/i.test(queryText);
+
+  // Check relevance threshold: if top score is low and not a sales query, restrict response immediately
+  const topScore = (contextChunks && contextChunks.length > 0) ? contextChunks[0].score : 0;
+  if (!isSalesOrDemoQuery && topScore < 0.18) {
+    return "I'm sorry, I don't have that information right now. Would you like me to connect you with one of our support representatives?";
+  }
+
+  const systemPrompt = isSystemOnline
+    ? `You are an expert live support assistant for ${companyName}.
+
+PERSONALITY & TONEOF VOICE:
+- Be warm, professional, clear, and direct.
+- Speak naturally as a human representative for ${companyName}.
+
+CRITICAL RULES:
+- NEVER mention "knowledge base", "KB", "context", or internal records to the user. Speak naturally as a support representative.
+- Base your answers ONLY on the provided Context. Do NOT invent facts or give external information.
+- Keep responses short, concise, and helpful (max 50 words).
+- If listing points, use simple plain-text bullet points starting with "- ". Never use asterisks or hashtags.
+- For sales, demo, or pricing inquiries: Answer using the provided Context or invite the visitor to leave their phone/email so a representative can follow up.
+
+Context:
+${contextText}
+
+Recent History:
+${historyText}`
+    : `You are an expert live support assistant for ${companyName}. The support team is currently OFFLINE outside business hours.
+
+PERSONALITY & TONEOF VOICE:
+- Be warm, professional, clear, and direct.
+
+CRITICAL RULES:
+- NEVER mention "knowledge base", "KB", or internal databases to the user.
+- Base your answers ONLY on the provided Context. Keep responses concise (max 50 words).
+- Plain text only. No markdown formatting or asterisks.
+- Inform the user that live agents are currently offline and ask them to share their email or phone number so our team can follow up promptly.
+
+Context:
+${contextText}
+
+Recent History:
+${historyText}`;
   
   // 1. Try Groq API
   if (process.env.GROQ_API_KEY) {
     try {
+      console.log("Generating AI response via Groq API (LLaMA 3.1)...");
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -125,20 +187,20 @@ async function generateAnswer(queryText, contextChunks) {
           messages: [
             {
               role: 'system',
-              content: `You are a helpful live-chat assistant. Use the following retrieved knowledge base context to answer the user's question. If the context does not contain the answer, answer naturally and offer to connect them to a human support representative. Keep the answer short (under 3 sentences) and professional.\n\nContext:\n${contextText}`
+              content: systemPrompt
             },
             {
               role: 'user',
               content: queryText
             }
           ],
-          max_tokens: 150,
+          max_tokens: 110,
           temperature: 0.2
         })
       });
       const data = await response.json();
       if (data.choices && data.choices[0] && data.choices[0].message) {
-        return data.choices[0].message.content.trim();
+        return stripMarkdownFormatting(data.choices[0].message.content);
       }
     } catch (err) {
       console.error("Groq Generation Error:", err.message);
@@ -149,24 +211,19 @@ async function generateAnswer(queryText, contextChunks) {
   if (process.env.GEMINI_API_KEY) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
-      const prompt = `You are a helpful live-chat assistant. Use the following retrieved knowledge base context to answer the user's question. If the context does not contain the answer, answer naturally and offer to connect them to a human support representative. Keep the answer short (under 3 sentences) and professional.
-      
-Context:
-${contextText}
-
-Question: ${queryText}
-Answer:`;
+      const prompt = `${systemPrompt}\n\nQuestion: ${queryText}\nAnswer:`;
 
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 110 }
         })
       });
       const data = await response.json();
       if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0]) {
-        return data.candidates[0].content.parts[0].text.trim();
+        return stripMarkdownFormatting(data.candidates[0].content.parts[0].text);
       }
     } catch (err) {
       console.error("Gemini Generation Error:", err.message);
@@ -187,20 +244,20 @@ Answer:`;
           messages: [
             {
               role: 'system',
-              content: `You are a helpful live-chat assistant. Use the following retrieved knowledge base context to answer the user's question. If the context does not contain the answer, answer naturally and offer to connect them to a human support representative. Keep the answer short (under 3 sentences) and professional.\n\nContext:\n${contextText}`
+              content: systemPrompt
             },
             {
               role: 'user',
               content: queryText
             }
           ],
-          max_tokens: 150,
+          max_tokens: 110,
           temperature: 0.2
         })
       });
       const data = await response.json();
       if (data.choices && data.choices[0] && data.choices[0].message) {
-        return data.choices[0].message.content.trim();
+        return stripMarkdownFormatting(data.choices[0].message.content);
       }
     } catch (err) {
       console.error("OpenAI Generation Error:", err.message);
@@ -216,13 +273,13 @@ Answer:`;
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: process.env.OLLAMA_MODEL || 'llama3',
-          prompt: `Context:\n${contextText}\n\nQuestion: ${queryText}\n\nAnswer the question shortly based on the context. If unknown, say "I don't know".`,
+          prompt: `${systemPrompt}\n\nQuestion: ${queryText}\n\nAnswer:`,
           stream: false
         })
       });
       const data = await response.json();
       if (data.response) {
-        return data.response.trim();
+        return stripMarkdownFormatting(data.response);
       }
     } catch (err) {
       console.error("Ollama Generation Error:", err.message);
@@ -230,11 +287,29 @@ Answer:`;
   }
 
   // 5. Default Local Semantic Search QA Fallback
-  if (contextChunks.length > 0 && contextChunks[0].score > 0.4) {
-    return `Based on our knowledge base, here is what I found:\n\n"${contextChunks[0].content}"\n\nHope this helps! Let me know if you would like to speak to a human agent.`;
+  if (contextChunks.length > 0 && contextChunks[0].score > 0.18) {
+    const raw = contextChunks[0].content;
+    const cleanText = raw
+      .replace(/^---+$/gm, '')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^Q:\s*/gm, '')
+      .replace(/^A:\s*/gm, '')
+      .replace(/Hope this helps!/gi, '')
+      .trim();
+
+    if (cleanText) {
+      // Cut off at first 4 sentences if too long
+      const sentences = cleanText.split(/(?<=[.!?])\s+/);
+      const shortCleanText = sentences.slice(0, 4).join(' ');
+      return stripMarkdownFormatting(shortCleanText);
+    }
   }
 
-  return "I'm sorry, I couldn't find an answer to your question in our knowledge base. Would you like me to connect you to a human agent?";
+  if (isSalesOrDemoQuery || !isSystemOnline) {
+    return "Our live support team is currently offline outside business hours. Please leave your email or phone number and a representative will get back to you shortly.";
+  }
+
+  return "I'm sorry, I don't have that information right now. Would you like me to connect you with one of our support representatives?";
 }
 
 module.exports = {
